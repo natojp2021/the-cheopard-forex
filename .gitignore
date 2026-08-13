@@ -1,0 +1,122 @@
+# ==========================================
+# 1. Python & Environment
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv311/
+.venv/
+env/
+.env
+
+# refactor 27/07 (refactor.md §5): Git KHÔNG phải cơ chế backup cho model
+# artifact. src/models/XAUUSD/gbm_model.joblib.backup từng bị track (617KB) —
+# đã untrack, file vẫn còn trên đĩa. Versioning model phải qua model registry /
+# artifact versioning (research/model_bundle.py), không qua hậu tố tên file.
+*.bak
+*.backup
+
+# ==========================================
+# 2. Project Data & Cache
+# ==========================================
+data/cache/
+data/raw/
+# Runtime state (PID lock, guard, position state, ML signal) — sinh khi chay, KHONG commit
+data/live/
+# FIX 27/07 (nhánh the-matrix): pattern `data/live/` có dấu `/` nên bị git NEO VÀO GỐC
+# REPO -> KHÔNG khớp `src/data/live/`. Hệ quả: các file state runtime dưới
+# src/data/live/<login>/ (vd operational_health.json, parity_monitor.json) lọt qua
+# ignore và bị đưa vào commit. (Các file .jsonl cùng thư mục thì đã được `*.jsonl`
+# ở dưới bắt, nên trước đây chỉ thấy lọt đúng mấy file .json — dễ tưởng là chủ ý.)
+#
+# CẬP NHẬT 28/07: NGUYÊN NHÂN GỐC đã được sửa — `src/data/live/` tồn tại là do
+# `AccountController` đi lên thiếu một cấp thư mục, nên LIVE_DIR ra `<repo>/src/
+# data/live/` thay vì `<repo>/data/live/`. Sau fix, state runtime nằm hoàn toàn
+# trong `data/live/<login>/` và dòng dưới đây KHÔNG còn khớp gì nữa.
+# GIỮ LẠI có chủ đích: các máy triển khai chưa chạy `scripts/migrate_live_dir.py`
+# vẫn còn file cũ ở đường đó — xoá dòng này sớm sẽ khiến chúng lọt vào commit.
+# Xoá được sau khi mọi deployment đã migrate xong.
+src/data/live/
+data/macro/
+# Checkpoint CSV sinh ra khi chay exit_lab research (research/exit_lab/runner.py)
+# — kết quả trung gian tái tạo được từ code + data, không phải nguồn chân lý,
+# không commit (giống data/cache, data/raw).
+data/research/
+# FIX 25/07: bản copy portable của D:/data-ticks-train (user tự copy _m1/_m5
+# XAU/XAG vào đây để chạy được trên máy không có ổ D: — xem
+# research/exit_lab/data_loader.py::_resolve_data_ticks_root()). Dữ liệu lớn
+# (~169MB+), CHỦ ĐÍCH giữ ngoài git giống hệt lý do D:/data-ticks-train ngoài
+# git từ đầu (nhẹ repo) — KHÔNG commit dù nằm trong thư mục repo.
+data/data-ticks-train/
+
+# Kết quả trung gian của nghiên cứu Hard Regime (11/08): parquet nhãn/feature theo
+# từng nến cho 3 khung + bảng lệnh backtest + log. ~100MB và TÁI TẠO ĐƯỢC hoàn toàn
+# từ code + data gốc, nên cùng lý do với `data/research/`: không phải nguồn chân lý,
+# không commit. Kết luận đã trích vào `docs/research/hard-regime-audit-2026-08-11.md`.
+# Chỗ lưu thật là `D:/data-ticks-train/hard_regime_audit/` (xem `_out_dir.py`); mục
+# ignore này là lưới an toàn cho máy KHÔNG có ổ D: và phải ghi tạm vào repo.
+research/hard_regime_audit/out/
+
+# Ignore scratch files (cache, parquet, csv)
+scratch/**/cache/
+scratch/**/*.parquet
+scratch/**/*.csv
+scratch/**/*.tmp
+
+# ==========================================
+# 3. Logs & Diagnostics
+# ==========================================
+logs/
+*.log
+*.log.*
+*.jsonl
+# NGOẠI LỆ 29/07 — sổ đăng ký promotion. `*.jsonl` ở trên nhắm vào log/journal
+# runtime (tái tạo được, ồn ào). `artifacts/promotions/` thì NGƯỢC LẠI: nó là
+# lịch sử có phiên bản + chuỗi băm của các giá trị điều khiển vốn (EVIDENCE_SCORE
+# là hệ số nhân risk mỗi lệnh). Không commit = mất luôn audit trail và khả năng
+# tái lập — đúng thứ sổ này sinh ra để có. Xem
+# `core/intelligence/promotion_registry.py`.
+!artifacts/promotions/**/*.jsonl
+
+# ==========================================
+# 4. IDEs & Editors
+# ==========================================
+.vscode/
+.idea/
+.claude/settings.local.json
+.pytest_cache/
+
+# ==========================================
+# 5. Weekly Review archive (Weekly Review Event, 24/07)
+# ==========================================
+# Ngoại lệ có chủ đích cho các pattern *.log/*.jsonl ở mục 3 — output của
+# Weekly Review Event (core/optimize/weekly_review_event.py) PHẢI được commit
+# dù chứa file .log/.jsonl, vì đây là kho lưu trữ lịch sử giao dịch dùng để AI
+# phân tích/tối ưu sau này (xem PLAN docs/optimize/PLAN_Weekly_Review_Event_2026-07-24.md
+# §2.8). Negation PHẢI đứng sau rule bị phủ định (thứ tự trong file này quan trọng).
+!research/weekly-review/
+!research/weekly-review/**
+scratch/_regime_smoke_model/
+
+# Log thô của backtest chạy nền — hàng chục MB, chỉ là dòng chẩn đoán lặp lại.
+# Kết quả đã được trích vào docs/research/. Thêm 06/08 sau khi 3 file (210 MB)
+# lọt vào repo qua một lệnh `git add -A`.
+scratch/_ctl_job*.txt
+scratch/_control_parity_out.txt
+scratch/_pha_giam.txt
+
+# ---- DỌN 07/08: chỉ mục nhị phân trung gian của scratch ----------------------
+# `_ckpt_*` / `_cache_*` là điểm lưu giữa chừng của các lượt quét tham số, và
+# `*.pkl` trong scratch là kết quả trung gian. Chúng SINH LẠI ĐƯỢC từ chính
+# script bên cạnh, nên giữ trong git chỉ làm repo nặng (11 MB) mà không thêm
+# một chút giá trị nghiên cứu nào — bản thân SCRIPT mới là thứ đáng giữ.
+scratch/_ckpt_*/
+scratch/_cache_*/
+scratch/**/*.pkl
+scratch/**/*.joblib
+scratch/**/*.npy
+scratch/**/*.npz
+
+# Cây thư mục sinh bằng `tree` — 1,1 MB văn bản, lỗi thời ngay khi thêm file mới.
+repo_structure.txt
+claude-swap/
