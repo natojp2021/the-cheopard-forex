@@ -1,0 +1,21 @@
+Đang chạy time-stop ×1.0…
+2026-08-15 21:04:10 | INFO    | cheopard | \U0001f3d7\ufe0f \u0110� c�i \u0111\u1eb7t Global Exception Hook v� Threading Exception Guard.
+Đang chạy time-stop ×1.5…
+Đang chạy time-stop ×2.0…
+
+==============================================================================
+PHẢN CHỨNG TIME-STOP — 2026, đường vào lệnh thật
+==============================================================================
+
+kịch bản        số dư cuối      lãi/lỗ    MaxDD   lệnh  TS lệnh   TS lãi/lỗ   win%
+------------------------------------------------------------------------------
+×1.0         $     105,063 $    +5,063    3.09%    673      113 $    -6,795  66.1%
+×1.5         $     104,744 $    +4,744    3.18%    644       64 $    -3,667  66.0%
+×2.0         $     104,819 $    +4,819    3.17%    625       56 $    -2,849  65.3%
+
+KẾT LUẬN
+  ×1.5: lãi -320 $ · MaxDD +0.09 điểm % → KHÔNG nới — time-stop đang CỨU, không phải cắt
+  ×2.0: lãi -245 $ · MaxDD +0.08 điểm % → KHÔNG nới — time-stop đang CỨU, không phải cắt
+
+Giới hạn: 6,5 tháng và 22/27 chân. Kết luận này là GỢI Ý HƯỚNG, chưa đủ
+để đổi tham số — đổi time-stop phải qua đủ 6 kiểm định + cổng PBO.

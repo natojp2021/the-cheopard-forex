@@ -1,0 +1,8 @@
+2026-08-16 08:27:44 | INFO    | cheopard | \U0001f3d7\ufe0f \u0110� c�i \u0111\u1eb7t Global Exception Hook v� Threading Exception Guard.
+[PASS] BIÊN DỊCH MỌI MODULE: (không có đầu ra)
+[PASS] IMPORT ĐƯỜNG LIVE: 28/28 module import được
+[PASS] BẤT BIẾN RỦI RO FTMO: 6/6 bat bien rui ro dung
+[PASS] UNIT + PARITY + SAFEGUARD: 186 passed in 543.51s (0:09:03)
+[THÔNG TIN] BUILD v2026.08.15_23:29:09+51c1379 | CurrencyReversal/1.0 CrossMeanReversion/1.0 CrossMomentum/1.0 CurrencyCar
+
+>>> KIỂM TRA PHÁT HÀNH: HỆ THỐNG SẴN SÀNG (128 module, 28 import đường live)

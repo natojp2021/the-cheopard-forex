@@ -1,0 +1,80 @@
+Đang chạy backtest danh mục 27 chân (chi phí MỚI)… (~2 phút)
+
+========================================================================
+DANH MỤC ĐỦ 27 CHÂN · 2026-01-01 → 2026-07-17
+========================================================================
+
+KẾT QUẢ
+  Số dư đầu               $100,000.00
+  Số dư cuối              $113,188.58
+  Lãi/lỗ ròng             $13,188.58  (+13.19%)
+  Số tháng giao dịch      9.4
+  Lợi nhuận mỗi tháng     +1.40%
+
+RỦI RO
+  MaxDD (từ đỉnh)         6.55%  ($6,552.67)
+  Equity thấp nhất        $93,447.33
+  Ngày tệ nhất            $-2,207.27  (-2.21%)
+  ├─ so SÀN NỘI BỘ 9%     ĐẠT  · còn +2.45 điểm %
+  ├─ so LUẬT FTMO 10%     ĐẠT  · còn +3.45 điểm %
+  └─ ngày so MỐC 5%       ĐẠT  · còn +2.79 điểm %
+
+CHẤT LƯỢNG (theo NGÀY, không theo lệnh)
+  Số ngày giao dịch       198
+  Ngày lãi / lỗ           104 / 94
+  Tỷ lệ ngày lãi          52.5%
+  R:R (lãi TB : lỗ TB)    1.71 : 1
+  Profit Factor           1.89
+  Đòn bẩy trung bình      4.78x (trần 6.00x)
+
+THEO THÁNG
+  Tháng           Lãi/lỗ        %    MaxDD
+  ----------------------------------------
+  2026-01         -6,264   -6.26%    6.26%
+  2026-02         +1,146   +1.22%    0.31%
+  2026-03         +3,203   +3.38%    1.06%
+  2026-04         +4,750   +4.84%    0.83%
+  2026-05         +7,139   +6.94%    0.25%
+  2026-06         +2,973   +2.70%    0.92%
+  2026-07           +242   +0.21%    0.66%
+
+ĐÓNG GÓP TỪNG CHÂN (bps, 2026)
+  cross_h1                  1321.3  DANH MỤC
+  rsidiv_nzdcad_m30          888.1  
+  volreg_audchf_m30          597.8  
+  carry                      488.2  DANH MỤC
+  rsidiv_gbpnzd_m30          401.8  
+  zb_audcad_h4               334.9  
+  streak_audcad_m30          330.9  
+  streak_gbpaud_h1           309.0  
+  rsidiv_nzdcad_h1           298.0  
+  zb_gbpnzd_h4               271.5  
+  zb_audcad_m30              236.6  
+  cross_xs_h4                188.0  DANH MỤC
+  zb_nzdcad_m30              182.6  
+  accel_gbpnzd_h1            169.9  
+  zb_gbpaud_h1               107.8  
+  reversal                    91.5  DANH MỤC
+  zb_nzdcad_h1                72.0  
+  volreg_gbpchf_m30           65.8  
+  zb_eurgbp_h1                59.1  
+  cross_mom                   50.2  DANH MỤC
+  zb_gbpaud_h4                37.9  
+  volreg_gbpaud_h1            28.0  
+  zb_eurchf_h1                23.6  
+  zb_gbpusd_h1                23.3  
+  zb_audcad_h1                -6.0  
+  zb_gbpaud_m30              -58.2  
+  streak_gbpcad_h1          -107.5  
+
+  5 chân danh mục :   +2139.2 bps  (33.4%)
+  22 chân đơn     :   +4267.0 bps
+
+KỲ THI FTMO HAI VÒNG
+  Vòng 1 (+10%)           7.1 tháng
+  Vòng 2 (+5%)            3.6 tháng
+  TỔNG                    10.7 tháng
+
+⚠️ 5 chân danh mục đo trên ĐƯỜNG PHÂN TÍCH, không qua tầng thực thi
+   (làm tròn lot, spread tại điểm khớp). Con số của chúng LẠC QUAN hơn
+   thực tế một chút — xem docstring đầu file.
