@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "tradingview": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\ToanVD\\tradingview-mcp\\src\\server.js"
+      ]
+    }
+  }
+}

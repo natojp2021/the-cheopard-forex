@@ -1,0 +1,50 @@
+# Runtime and data processing
+numpy>=1.24
+pandas>=2.0
+pyarrow>=14.0
+fastparquet>=2026.5.0
+PyYAML>=6.0
+
+# Machine learning and research
+joblib>=1.5
+# Runtime hiện được chuẩn hóa trên Python 3.10; sklearn 1.9 yêu cầu Python >=3.11.
+scikit-learn>=1.7.2,<1.8
+scipy>=1.10
+polars>=1.0
+
+# Console van hanh (thay bang dieu khien Tk, 19/08/2026)
+rich>=13.7
+
+# MT5 bridge
+MetaTrader5>=5.0.45 ; sys_platform == "win32"
+
+# XOA 19/08/2026 cung dot chuyen sang console-only:
+#   customtkinter  bang dieu khien Tk da bi xoa (gui_command_center.py, ui_patches.py)
+#   matplotlib     chi duoc nap boi bang dieu khien do; khong module nao con import
+# Ca hai deu la phu thuoc NANG nap vao cung tien trinh voi vong lap giao dich. Do la
+# RAM va CPU tra cho mot cua so khong ai ngoi truoc tren VPS - va may nay da co tien
+# le bi kill vi het RAM. Giu lai "cho chac" nghia la van phai nap, kiem va bao tri.
+# Can ve bieu do cho nghien cuu thi cai matplotlib rieng, dung dua no vao duong live.
+
+# Macro/News sentiment research (2026-07-23) — cào tin (Finnhub/NewsAPI/Alpha Vantage) + Gemini API
+requests>=2.31
+
+# FIX 24/07: migrate từ google-generativeai (SDK cũ, Google đã CHÍNH THỨC
+# ngừng hỗ trợ) sang google-genai (SDK mới, client-based).
+google-genai>=1.0
+
+# pandas<3 (rang buoc cua sdv ben duoi — da xac nhan downgrade khong pha vo test hien co)
+pandas<3
+
+# OPTIONAL, NANG (~2GB torch) — chi can neu dung research/synthetic_data_deep.py
+# (Cau hoi 35 §5 muc 3 — GaussianCopula/CTGAN qua SDV, thay the cho TimeGAN vi
+# ydata-synthetic khong tuong thich Python 3.13). Da CAI THAT trong moi truong nay
+# (theo yeu cau user); BO COMMENT dong duoi neu muon moi truong moi cung co san:
+# sdv>=1.37
+
+# XOÁ 23/07: transformers/torch (FinBERT qua research/macro_sentiment.py) — đã
+# GỠ khỏi requirements.txt VÀ khỏi .venv311 theo quyết định người dùng sau khi
+# xem báo cáo so sánh (correlation ÂM -0.614 với Gemini trên headline thật,
+# FinBERT không hiểu quan hệ nghịch USD-vàng). Module macro_sentiment.py giờ
+# CHỈ dùng Gemini (google-genai, đã có sẵn ở trên — SDK cũ google-generativeai
+# đã bị gỡ hẳn, xem FIX 24/07 phía trên).

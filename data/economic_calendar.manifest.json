@@ -1,0 +1,15 @@
+{
+  "created_utc": "2026-07-17T12:22:08.092763+00:00",
+  "sources": {
+    "FOMC": "federalreserve.gov/monetarypolicy/fomccalendars.htm + fomchistorical{2018,2019,2020}.htm (fetch 2026-07-17); statement 14:00 ET ng\u00e0y cu\u1ed1i h\u1ecdp",
+    "NFP": "X\u1ea4P X\u1ec8 th\u1ee9 S\u00e1u \u0111\u1ea7u th\u00e1ng 08:30 ET (BLS ch\u1eb7n bot; sai s\u1ed1 ~1-2 ng\u00e0y/n\u0103m do l\u1ec5) \u2014 research-only, KH\u00d4NG production blackout"
+  },
+  "n_events": {
+    "FOMC": 71,
+    "NFP": 199
+  },
+  "coverage": [
+    "2010-01-01 13:30:00+00:00",
+    "2026-07-29 18:00:00+00:00"
+  ]
+}
