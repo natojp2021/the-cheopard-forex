@@ -127,9 +127,19 @@ py -3.11 -m venv .venv311
 .\.venv311\Scripts\python.exe -m pytest -q tests/test_rulebook.py --tb=short
 .\.venv311\Scripts\python.exe -m pytest -q tests/test_no_lookahead.py::test_zscore_khong_dung_du_lieu_tuong_lai
 
-# Bảng điều khiển (GUI kế thừa từ The Cheopard, customtkinter — DARK NAVY)
-.\.venv311\Scripts\python.exe -m src.python.gui_launcher
-#   hoặc nhấn đúp start_live_server.vbs (chạy ẩn) / start_live_server.bat (có log)
+# Chạy bot — CONSOLE-ONLY từ 19/08/2026 (bảng điều khiển Tk đã bị XOÁ)
+.\.venv311\Scripts\python.exe -m src.python.live_server
+#   hoặc nhấn đúp start_live_server.bat — cửa sổ console CHÍNH LÀ ứng dụng
+#   dừng êm từ ngoài: tạo tệp data/live/STOP_REQUESTED (đừng dùng taskkill:
+#   kill giữa lúc gửi lệnh là chỗ sinh ra vị thế không có SL)
+#   `start_live_server.vbs` đã bị xoá — nó chạy `pythonw.exe`, vốn KHÔNG CÓ
+#   console, nên với app console-only thì nó không hiện được gì cả
+
+# Điều khiển bot từ MỘT cửa sổ KHÁC (thay các nút của bảng điều khiển cũ)
+.\.venv311\Scripts\python.exe -m src.python.ops_ctl status
+.\.venv311\Scripts\python.exe -m src.python.ops_ctl run|stop
+.\.venv311\Scripts\python.exe -m src.python.ops_ctl positions
+.\.venv311\Scripts\python.exe -m src.python.ops_ctl flatten --confirm   # KILL SWITCH
 
 # In thẻ luật của mọi chiến lược
 .\.venv311\Scripts\python.exe -m src.python.strategies.rulebook
@@ -143,6 +153,29 @@ py -3.11 -m venv .venv311
 ```
 
 `pytest.ini` chỉ thu thập `tests/`; `tests/manual/` bị loại khỏi thu thập tự động (script chạy tay đọc parquet thật). Không chạy full suite sau mỗi patch nhỏ — chạy test đích trước.
+
+## Console vận hành (19/08/2026 — thay bảng điều khiển Tk)
+
+Bảng điều khiển customtkinter 1.926 dòng đã bị XOÁ, không phải tắt mặc định. Ba lý do, và cả ba đều đo được:
+
+- **RAM/CPU** — Tk + customtkinter + matplotlib + Pillow nạp vào CÙNG tiến trình với vòng lặp giao dịch, cho một cửa sổ không ai ngồi trước trên VPS.
+- **Rủi ro** — ba sự cố vận hành đã ghi lại đều xuất phát từ tầng giao diện, không từ logic giao dịch: `pythonw` không có console nên traceback biến mất; `_Redirector` thay `sys.stdout` làm logger ghi sang chỗ khác; `root.after()` gọi từ luồng nền ném `RuntimeError` và giết luồng nền. Console-only không vá chúng — nó bỏ chỗ để chúng xảy ra.
+- **Bảo trì** — một chế độ không ai dùng vẫn phải nạp, kiểm, và giữ phụ thuộc.
+
+Phần LOGIC được cứu ra nguyên vẹn: `core/ops_view.py` (ma trận quyết định 27 chân, sức khoẻ hệ, thiên hướng danh mục) và `core/ops_theme.py` (bảng màu ngữ nghĩa, chép nguyên mã hex).
+
+**Console kể SỰ KIỆN, không vẽ TRẠNG THÁI.** Đó là ranh giới quan trọng nhất của thiết kế này. Giao diện được phép hiển thị trạng thái vì nó VẼ LẠI cùng một vùng màn hình; terminal thì mỗi dòng in ra là một dòng cộng thêm vĩnh viễn. Bê nội dung các thẻ sang chữ sẽ cho ra thứ tệ hơn cả GUI.
+
+    console   sự kiện · đổi trạng thái · cảnh báo · nhịp tim 45s   ← người, vài giây
+    JSONL     mọi số đo, mọi trường, mọi lần                       ← máy, về sau
+              logs/{system,market,strategy,trading,ai,risk,daily}/<ngày>.jsonl
+
+**Chống spam: hai lớp, khác bản chất.** Bằng chứng gốc — nhật ký VPS 18/08/2026 có **590 dòng cổng spread trong 49 phút** (mỗi 5 giây một dòng, mỗi dòng 20 công cụ) đi qua trọn HAI lớp khử lặp đã có. Cả hai thất bại vì cùng một lý do: dấu vân tay dedup CÓ CHỨA những con số đổi mỗi tick.
+
+- Lớp một: sửa từ gốc ở điểm ghi log (`engine._log_spread_gate` dedup theo *số công cụ*, không theo giá trị bps).
+- Lớp hai: `ops_console._Squelch` so vân tay **sau khi xoá hết chữ số** — bắt được các đợt CHƯA biết, không phụ thuộc điểm ghi nào.
+
+Nén **chỉ ở tầng hiển thị và chỉ SAU khi đã ghi sổ**. Đảo thứ tự là đánh mất chính những dòng cần cho việc truy vết về sau.
 
 ## Kiến trúc
 
@@ -160,8 +193,9 @@ src/python/
 ├── execution/       order_plan (ĐƯỜNG DUY NHẤT ra lệnh), entry_gate, portfolio_sizing,
 │                    ftmo_leverage_policy, disaster_stop, portfolio_risk,
 │                    rule_trace, decision_log
-├── core/          gui_command_center.py (KẾ THỪA nguyên vẹn từ The Cheopard, chỉ đổi
-│                  bảng màu + _DISPLAY_ORDER), engine.py, config.py, strategy_registry.py
+├── core/          engine.py, config.py, strategy_registry.py + tầng TRÌNH BÀY console:
+│                  ops_console.py (dòng sự kiện + nhịp tim + báo cáo khởi động/tắt máy),
+│                  ops_view.py (đọc trạng thái — cứu ra từ GUI cũ), ops_theme.py (màu)
 ├── core/execution/  entry_pipeline, order_state_machine, position_execution_service
 ├── ai/            news_guard.py — cổng tin MỘT TẦNG (thay ai_moe_engine 2 tầng của XAU)
 └── utils/           logger, env_loader

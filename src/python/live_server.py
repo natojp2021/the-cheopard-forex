@@ -1,29 +1,57 @@
-"""live_server.py — ĐIỂM VÀO của The Cheopard Forex (CLI và GUI).
+"""live_server.py — ĐIỂM VÀO của The Cheopard Forex. CONSOLE-ONLY từ 19/08/2026.
 
-KẾ THỪA BỐ CỤC TỪ THE CHEOPARD
-===============================
-Giữ nguyên vai trò và tên của bản XAUUSD: một điểm vào duy nhất, hai chế độ (`--cli`
-và GUI), STOP_FILE cho phép dừng êm từ bên ngoài, và màn hình chờ vì khởi động mất
-vài chục giây.
+VÌ SAO XOÁ HẲN BẢNG ĐIỀU KHIỂN ĐỒ HOẠ
+======================================
+Bản trước có hai chế độ: `--cli` và một bảng điều khiển customtkinter 1.926 dòng.
+Bảng đó bị xoá, không phải "tắt mặc định":
 
-BA THỨ THÊM VÀO — mỗi thứ vá một lỗi ĐÃ XẢY RA
-===============================================
-1. **CHỐNG CHẠY NHIỀU BẢN.** Ngày 14/08 có bốn tiến trình cùng chạy (hai từ 9:31,
-   hai từ 9:36) vì mỗi lần nhấn launcher lại mở thêm một bản. Người dùng nhìn cửa sổ
-   của bản CŨ và tưởng code mới không được nạp. Nay bản thứ hai phát hiện bản đang
-   chạy, ĐƯA CỬA SỔ CŨ LÊN TRƯỚC rồi tự thoát.
+  · CHI PHÍ THẬT. Tk + customtkinter + matplotlib + Pillow nạp vào cùng tiến trình
+    với vòng lặp giao dịch. Trên VPS đó là RAM và CPU tiêu cho một cửa sổ mà không
+    ai ngồi trước — máy này đã có tiền lệ bị kill vì hết RAM khi chạy song song.
+  · RỦI RO THẬT. Ba trong số các sự cố vận hành đã ghi lại đều xuất phát từ tầng
+    giao diện chứ không từ logic giao dịch: `pythonw` không có console nên mọi
+    traceback biến mất; `_Redirector` thay `sys.stdout` làm logger ghi vào chỗ khác;
+    `root.after()` gọi từ luồng nền ném `RuntimeError` và giết luồng nền. Không có
+    sự cố nào trong đó tồn tại nếu không có cửa sổ.
+  · GIỮ LẠI "CHO TƯƠNG THÍCH" LÀ GIỮ CẢ BA VẤN ĐỀ. Một chế độ không ai dùng vẫn phải
+    được nạp, kiểm và bảo trì.
 
-2. **ĐẶT TÊN CỬA SỔ.** Bản trước để customtkinter tự đặt, và tiêu đề ra là "CTk" —
-   trên thanh tác vụ không phân biệt được với bất kỳ app Python nào khác, kể cả hệ
-   XAUUSD nếu chạy song song.
+Phần LOGIC trong tệp giao diện cũ không mất: nó chuyển sang `core/ops_view.py` (các
+hàm đọc trạng thái) và `core/ops_theme.py` (bảng màu ngữ nghĩa). Phần bị xoá đúng là
+phần dựng widget.
 
-3. **BÁO LỖI THẤY ĐƯỢC.** `pythonw` không có console nên mọi traceback biến mất.
-   Lỗi khởi động nay hiện thành hộp thoại.
+BA THỨ GIỮ LẠI TỪ BẢN CŨ — mỗi thứ vá một lỗi ĐÃ XẢY RA
+========================================================
+1. CHỐNG CHẠY NHIỀU BẢN. Ngày 14/08 có bốn tiến trình cùng chạy vì mỗi lần nhấn
+   launcher lại mở thêm một bản; người dùng nhìn bản CŨ và tưởng code mới không được
+   nạp. Với console-only nguy cơ còn cao hơn: hai tiến trình cùng gửi lệnh lên MỘT
+   tài khoản MT5 là hai bộ quản lý vị thế đánh nhau.
+2. STOP_FILE cho phép dừng ÊM từ bên ngoài (watchdog, tác vụ theo lịch) — không dùng
+   `taskkill`, vì kill giữa lúc gửi lệnh là chỗ sinh ra vị thế không có SL.
+3. BÁO LỖI THẤY ĐƯỢC lúc khởi động. Nay in ra stderr thay vì hộp thoại.
+
+CÁC NÚT BẤM CHUYỂN SANG `ops_ctl`
+=================================
+Bảng cũ có ba hành động thật, và console-only phải thay được cả ba — nếu không thì đây
+là một bước lùi, không phải một bước gọn:
+
+    RUN ENGINE   -> python -m src.python.ops_ctl run
+    STOP ENGINE  -> python -m src.python.ops_ctl stop
+    FLATTEN ALL  -> python -m src.python.ops_ctl flatten --confirm
+
+Chúng chạy ở TIẾN TRÌNH KHÁC và nói chuyện qua công tắc trên đĩa, nên đổi được từ một
+phiên SSH thứ hai mà không chạm vào tiến trình bot. Đó là hơn nút bấm, không phải kém.
+
+ĐÃ XOÁ: `_splash`, `run_gui`, `_show_error` dạng hộp thoại messagebox, `_run_hidden`
+với cờ `CREATE_NO_WINDOW`, `_bring_window_to_front`. Cả năm thứ tồn tại chỉ vì có
+một cửa sổ và vì `pythonw` không có console — console-only thì không còn cái nào có
+nghĩa.
 """
 from __future__ import annotations
 
 import argparse
 import os
+import signal
 import sys
 import time
 import traceback
@@ -33,474 +61,265 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.python.core.config import LIVE_DIR, LOCK_FILE, BOT_NAME  # noqa: E402
+from src.python.core.config import BOT_NAME, LIVE_DIR, LOCK_FILE  # noqa: E402
 
 STOP_FILE = Path(LIVE_DIR) / "STOP_REQUESTED"
-WINDOW_TITLE = f"{BOT_NAME} — Quant Trading Command Center"
 
-# Nhịp giữa hai bước của màn hình chờ, mili giây. 180 lấy nguyên từ bản XAUUSD.
-#
-# Là hằng số MODULE chứ không phải số viết thẳng: nó là thứ duy nhất cần đổi để
-# giữ splash mở lâu hơn khi kiểm tra hiển thị bằng ảnh chụp màn hình, và một hằng
-# số có tên thì không ai phải sửa vào giữa thân hàm để làm việc đó.
-SPLASH_STEP_MS = 180
+# Nhịp kiểm STOP_FILE và kiểm động cơ còn sống, giây.
+POLL_SECONDS = 1.0
 
 
-def _preload_config() -> None:
-    from src.python.core import config              # noqa: F401
-    from src.python.utils import env_loader         # noqa: F401
+def _log(msg: str) -> None:
+    """SỔ VÒNG ĐỜI — ghi mọi mốc khởi động/thoát ra tệp riêng.
 
+    VÌ SAO CẦN: ngày 14/08 tiến trình tự thoát sau vài phút và KHÔNG để lại dấu vết
+    nào. Không có sổ này thì không phân biệt được "người vận hành tự đóng" với "vòng
+    lặp chính vỡ" — hai sự cố khác hẳn nhau mà nhìn từ ngoài giống hệt.
 
-def _preload_build() -> None:
-    from src.python.core.runtime_meta import version
-    version()
-
-
-def _preload_mt5() -> None:
-    import MetaTrader5                              # noqa: F401
-
-
-def _preload_guards() -> None:
-    from src.python.core.infra import ftmo, ftmo_guard          # noqa: F401
-    from src.python.execution import entry_gate                 # noqa: F401
-    from src.python.execution import ftmo_leverage_policy       # noqa: F401
-    from src.python.strategies import registry                  # noqa: F401
-
-
-# CÁC BƯỚC của màn hình chờ: (dòng chữ, tỷ lệ thanh, việc làm THẬT).
-#
-# Ở CẤP MODULE chứ không nằm trong `_splash` vì `perform_load` NUỐT lỗi của từng
-# bước — không nuốt thì một module đổi tên sẽ chặn cả đường khởi động vì một cửa sổ
-# trang trí. Nhưng nuốt lỗi nghĩa là hỏng mà im lặng, nên phải có test gọi thẳng
-# từng hàm nạp: `tests/test_live_server_splash.py`.
-#
-# Bản XAUUSD chỉ đếm 180 ms mỗi bước rồi đổi chữ — thanh tiến trình nói "Đang kiểm
-# tra kết nối MT5" trong khi không kiểm gì. Ở đây mỗi bước nạp thật nhóm module
-# tương ứng: dòng chữ không nói dối, và phần import nặng chạy xong TRƯỚC khi dựng
-# cửa sổ chính, tức lấp đúng quãng người vận hành phải chờ.
-SPLASH_STEPS = (
-    ("Đang nạp cấu hình hệ thống...", 0.2, _preload_config),
-    ("Đang kiểm tra Git metadata...", 0.4, _preload_build),
-    ("Đang kiểm tra kết nối MT5...", 0.6, _preload_mt5),
-    ("Đang nạp các chỉ số bảo vệ Guard...", 0.8, _preload_guards),
-    ("Hoàn tất! Đang hiển thị bảng điều khiển...", 1.0, None),
-)
-
-
-# ═══════════════════════════════════════════════════════ chạy lệnh hệ thống ẨN
-def _run_hidden(cmd: list, timeout: float = 5.0):
-    """Chạy `cmd` mà KHÔNG chớp cửa sổ console. Trả `stdout` (chữ thường), hoặc "".
-
-    VÌ SAO CẦN CỜ NÀY
-    ==================
-    `pythonw.exe` không có console, nên mỗi `subprocess.run` gọi một lệnh console
-    (`tasklist`, `taskkill`, `git`) làm Windows CẤP một cửa sổ mới — nó hiện lên rồi
-    tắt trong tích tắc. `capture_output=True` chỉ chuyển hướng luồng ra, KHÔNG ngăn
-    cửa sổ được cấp.
-
-    Số lần chớp không nhỏ: `_terminate` gọi `_pid_is_alive` mỗi 0,3 giây trong tối đa
-    8 giây, tức tới ~27 cửa sổ nhấp nháy liên tiếp mỗi lần nhấn VBS để nạp bản mới.
-    Đúng thứ người vận hành báo ngày 15/08/2026.
-
-    `CREATE_NO_WINDOW` (0x08000000) là cách hệ XAUUSD xử lý — xem
-    `core/runtime_meta._git` ở cả hai repo.
+    Ghi bằng `strftime` đầy đủ ngày-giờ. Bản đầu dựng dòng bằng mã định dạng `%Y` nên
+    mọi mốc trong sổ đều mang dấu thời gian "2026", tức không dựng lại được thứ tự sự
+    kiện — đúng thứ mà sổ này sinh ra để làm.
     """
-    import subprocess
+    from datetime import datetime
 
-    flags = 0x08000000 if os.name == "nt" else 0
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True,
-                             timeout=timeout, creationflags=flags)
-        return (out.stdout or "").lower()
+        path = Path(LIVE_DIR) / "live_server.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {msg}\n")
     except Exception:
-        return ""
+        pass
+
+
+def _fail(msg: str) -> None:
+    """Lỗi khởi động: ra stderr VÀ vào sổ vòng đời.
+
+    Không dùng `messagebox` nữa — một hộp thoại trên VPS là một tiến trình treo vô
+    thời hạn chờ người bấm OK, và không ai ở đó để bấm.
+    """
+    _log("LỖI KHỞI ĐỘNG: " + msg.replace("\n", " | "))
+    try:
+        sys.stderr.write("\n" + msg + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════ chống chạy nhiều bản
 def _pid_is_alive(pid: int) -> bool:
-    """Tiến trình `pid` còn sống VÀ đúng là bản chạy của hệ này?
+    """PID này còn sống không.
 
-    Chỉ kiểm tra pid tồn tại là chưa đủ: Windows tái dùng pid, nên một pid cũ có thể
-    đang thuộc về chương trình khác và ta sẽ từ chối khởi động vì một lý do sai.
+    Dùng `os.kill(pid, 0)` trên POSIX; trên Windows dùng `tasklist`. Không có
+    `CREATE_NO_WINDOW` nữa: console-only thì một cửa sổ con chớp lên không còn là
+    vấn đề (bản cũ cần cờ đó vì `pythonw` làm Windows CẤP cửa sổ mới cho mỗi lệnh,
+    tới ~27 lần nhấp nháy mỗi lần khởi động).
     """
-    return "python" in _run_hidden(
-        ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"])
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import subprocess
+
+    try:
+        out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"],
+                             capture_output=True, text=True, timeout=5.0)
+        return str(pid) in (out.stdout or "")
+    except Exception:
+        # KHÔNG kết luận "đã chết" khi không kiểm được: đoán sai theo hướng đó cho
+        # phép bản thứ hai khởi động và hai tiến trình cùng gửi lệnh lên một tài
+        # khoản. Fail-closed ở đây nghĩa là coi như CÒN SỐNG.
+        return True
+
+
+def _running_pid():
+    try:
+        return int(Path(LOCK_FILE).read_text(encoding="utf-8").strip() or 0)
+    except Exception:
+        return None
 
 
 def _acquire_lock() -> bool:
-    """Ghi khoá. Trả False nếu đã có bản khác đang chạy."""
+    """Chiếm khoá. `False` nếu đã có bản khác đang chạy thật."""
+    pid = _running_pid()
+    if pid and pid != os.getpid() and _pid_is_alive(pid):
+        return False
     try:
-        LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-        if LOCK_FILE.exists():
-            try:
-                pid = int(LOCK_FILE.read_text(encoding="utf-8").strip() or 0)
-            except (ValueError, OSError):
-                pid = 0
-            if pid and pid != os.getpid() and _pid_is_alive(pid):
-                return False
-        LOCK_FILE.write_text(str(os.getpid()), encoding="utf-8")
+        path = Path(LOCK_FILE)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(os.getpid()), encoding="utf-8")
         return True
     except Exception:
-        return True             # không khoá được thì cho chạy — fail-soft
-
-
-def _running_pid() -> int:
-    """PID ghi trong tệp khoá, hoặc 0."""
-    try:
-        return int(LOCK_FILE.read_text(encoding="utf-8").strip() or 0)
-    except (ValueError, OSError):
-        return 0
-
-
-def _other_instance_pids() -> list:
-    """PID của MỌI tiến trình đang chạy `-m src.python.live_server`, trừ chính mình.
-
-    VÌ SAO KHÔNG DÙNG PID TRONG TỆP KHOÁ
-    =====================================
-    Tệp khoá chỉ nhớ ĐÚNG MỘT pid — bản chạy gần nhất. Bản nào chết mà không nhả
-    khoá, hoặc hai bản khởi động cùng lúc, là có một tiến trình sống sót mà không ai
-    còn tham chiếu tới. Đo được lúc 13:33 ngày 15/08/2026: hai bản cùng chạy, một
-    bản từ 12:34 chạy mã CŨ. Cả hai cùng ghi vào `logs/timeline_*.log`, nên sổ log
-    trộn dòng của hai bản — và người vận hành thấy đúng những dòng vừa được xoá
-    khỏi mã nguồn, kết luận rằng bản sửa không có tác dụng. Sáu vòng sửa log trước
-    đó không sai; chúng chỉ bị một tiến trình ma nói đè lên.
-
-    Thêm nữa, `pythonw.exe` trong `.venv311\Scripts` là một shim: nó nạp trình
-    thông dịch nền rồi giữ vai trò TIẾN TRÌNH CHA. `taskkill /T` giết cây con của
-    pid được chỉ định, KHÔNG giết cha nó — nên diệt theo pid khoá luôn để sót shim.
-
-    Nay quét theo DÒNG LỆNH: mọi tiến trình python có `src.python.live_server` đều
-    là một bản của ứng dụng này, dù được khởi động bằng đường nào.
-    """
-    if os.name != "nt":
-        return []
-    out = _run_hidden([
-        "powershell", "-NoProfile", "-NonInteractive", "-Command",
-        "Get-CimInstance Win32_Process -Filter \"Name LIKE 'python%'\" | "
-        "Where-Object { $_.CommandLine -like '*src.python.live_server*' } | "
-        "Select-Object -ExpandProperty ProcessId"], timeout=20)
-    mine = os.getpid()
-    pids = []
-    for line in out.splitlines():
-        line = line.strip()
-        if not line.isdigit():
-            continue
-        pid = int(line)
-        if pid != mine and pid not in pids:
-            pids.append(pid)
-    return pids
-
-
-def _terminate(pid: int, timeout_s: float = 8.0) -> bool:
-    """Dừng tiến trình cũ và ĐỢI nó chết hẳn.
-
-    Phải đợi: `taskkill` trả về ngay, nhưng tiến trình còn giữ tệp khoá và cổng MT5
-    thêm một lúc. Chạy bản mới trước khi bản cũ nhả tay là hai bản cùng nói chuyện
-    với một terminal MT5.
-    """
-    import time as _t
-
-    _run_hidden(["taskkill", "/PID", str(pid), "/T", "/F"], timeout=10)
-    deadline = _t.monotonic() + timeout_s
-    while _t.monotonic() < deadline:
-        if not _pid_is_alive(pid):
-            try:
-                if LOCK_FILE.exists():
-                    LOCK_FILE.unlink()
-            except OSError:
-                pass
-            return True
-        _t.sleep(0.3)
-    return False
+        # Không ghi được khoá thì VẪN cho chạy: mất lớp chống nhân bản còn nhẹ hơn
+        # không chạy được bot vì một tệp khoá.
+        return True
 
 
 def _release_lock() -> None:
     try:
-        if LOCK_FILE.exists() and LOCK_FILE.read_text(encoding="utf-8").strip() == str(os.getpid()):
-            LOCK_FILE.unlink()
+        path = Path(LOCK_FILE)
+        if path.is_file() and path.read_text(encoding="utf-8").strip() == str(os.getpid()):
+            path.unlink()
     except Exception:
         pass
 
 
-def _bring_window_to_front() -> bool:
-    """Tìm cửa sổ của bản đang chạy và đưa nó lên trước. True nếu tìm thấy."""
-    try:
-        import ctypes
-        from ctypes import wintypes
+def _terminate(pid: int, timeout: float = 8.0) -> bool:
+    """Dừng ÊM bản cũ: đặt STOP_FILE trước, chỉ kill khi nó không chịu chết.
 
-        user32 = ctypes.windll.user32
-        found = []
-
-        @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-        def _on_window(hwnd, _l):
-            n = user32.GetWindowTextLengthW(hwnd)
-            if n:
-                buf = ctypes.create_unicode_buffer(n + 1)
-                user32.GetWindowTextW(hwnd, buf, n + 1)
-                if WINDOW_TITLE in buf.value and user32.IsWindowVisible(hwnd):
-                    found.append(hwnd)
-            return True
-
-        user32.EnumWindows(_on_window, 0)
-        if found:
-            user32.ShowWindow(found[0], 9)          # SW_RESTORE
-            user32.SetForegroundWindow(found[0])
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def _show_error(msg: str) -> None:
-    """Hiện lỗi ra hộp thoại VÀ stderr — tuỳ chế độ chạy mà cái nào đến được."""
-    print(msg, file=sys.stderr)
-    try:
-        import tkinter as tk
-        from tkinter import messagebox
-        r = tk.Tk()
-        r.withdraw()
-        messagebox.showerror(f"{BOT_NAME} — không khởi động được", msg[:2000])
-        r.destroy()
-    except Exception:
-        pass
-
-
-def _log(msg: str) -> None:
-    """Một dòng vào SỔ VÒNG ĐỜI `logs/live/gui_lifecycle.log`. Không bao giờ ném.
-
-    VÌ SAO CÓ SỔ RIÊNG: `pythonw` không có console, nên mọi thứ in ra màn hình đều
-    rơi vào hư không. Ngày 14/08 giao diện tự thoát sau vài phút mà KHÔNG để lại dấu
-    vết nào — khoá được nhả sạch nên nhìn từ ngoài giống hệt người dùng tự đóng cửa
-    sổ. Sổ này là đường duy nhất phân biệt hai chuyện đó.
-
-    Dùng chung cho splash và cho các mốc trong `run_gui` — hai đường ghi riêng là
-    hai đường sẽ trôi khỏi nhau, và lúc cần đọc thì thứ tự sự kiện không còn tin được.
+    Thứ tự này quan trọng. `taskkill` ngay lập tức có thể cắt giữa lúc `order_router`
+    đã gửi lệnh mà chưa xác minh xong SL/TP — tức để lại một vị thế không có điểm
+    dừng trên tài khoản thật. STOP_FILE đi qua đường dừng có kiểm soát của engine.
     """
     try:
-        from datetime import datetime as _dt
-
-        f = Path(LIVE_DIR) / "gui_lifecycle.log"
-        f.parent.mkdir(parents=True, exist_ok=True)
-        with f.open("a", encoding="utf-8") as fh:
-            fh.write(f"{_dt.now().strftime('%Y-%m-%d %H:%M:%S')} "
-                     f"pid {os.getpid()} {msg}\n")
+        STOP_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STOP_FILE.write_text("stop", encoding="utf-8")
     except Exception:
         pass
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _pid_is_alive(pid):
+            return True
+        time.sleep(0.3)
+    if os.name == "nt":
+        import subprocess
+
+        try:
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                           capture_output=True, timeout=5.0)
+        except Exception:
+            return False
+    else:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except Exception:
+            return False
+    time.sleep(0.5)
+    return not _pid_is_alive(pid)
 
 
-# ═══════════════════════════════════════════════════════ chế độ CLI
-def run_cli() -> int:
+# ═══════════════════════════════════════════════════════ vòng chạy console
+def run_console(*, heartbeat: float, structured: bool, quiet: bool) -> int:
+    """Chạy động cơ và trình bày qua `OpsConsole`. Đây là chế độ DUY NHẤT.
+
+    THỨ TỰ CÁC BƯỚC CÓ Ý NGHĨA
+    ===========================
+    1. Dựng console TRƯỚC engine, và bắc cầu `utils.logger` vào nó ngay. Nếu làm
+       ngược, các dòng log phát ra trong lúc engine khởi tạo (nối MT5, đọc pha FTMO,
+       đối soát vị thế) sẽ ra theo định dạng cũ và KHÔNG đi qua bộ nén spam.
+    2. `start_loop()` trước `boot_report()`: báo cáo khởi động phải đọc trạng thái
+       ĐÃ điền, nếu không nó in một bảng toàn "n/a" và chẳng nói được gì.
+    3. `shutdown_report()` nằm trong `finally` — nó phải ra CẢ KHI vòng lặp vỡ, vì
+       đúng lúc đó người vận hành cần biết còn vị thế nào đang mở.
+    """
     from src.python.core.engine import TradingEngine
+    from src.python.core.ops_console import OpsConsole
+    from src.python.utils import logger as _logger
 
-    engine = TradingEngine(log_callback=print)
+    console = OpsConsole(heartbeat_seconds=heartbeat, structured=structured,
+                         quiet=quiet)
+    _logger.attach_console_sink(lambda msg, level: console.event(str(msg)))
+
+    engine = TradingEngine(log_callback=console.log, status_callback=console.status)
+    _log("động cơ: bắt đầu khởi động")
     if not engine.start_loop():
+        _fail("KHÔNG khởi động được vòng lặp động cơ — xem logs/ để biết nguyên nhân.")
         return 1
+    _log("động cơ: vòng lặp đang chạy")
+
+    console.boot_report(engine.state)
+    console.strategy_table(engine.state)
+
+    reason = ""
     try:
         while engine.is_running:
             if STOP_FILE.exists():
+                reason = "nhận STOP_REQUESTED"
                 engine.log("nhận STOP_REQUESTED — dừng êm")
                 try:
                     STOP_FILE.unlink()
                 except OSError:
                     pass
                 break
-            time.sleep(1.0)
+            time.sleep(POLL_SECONDS)
+        else:
+            # Ra khỏi `while` mà không `break` nghĩa là `is_running` thành False —
+            # tức động cơ tự dừng. Phân biệt với "người vận hành yêu cầu dừng" vì
+            # một động cơ tự tắt là một sự cố cần điều tra.
+            reason = reason or "động cơ TỰ DỪNG (không do yêu cầu bên ngoài)"
     except KeyboardInterrupt:
+        reason = "Ctrl+C"
         engine.log("dừng bởi người dùng (Ctrl+C)")
+    except Exception:
+        reason = "vòng lặp chính VỠ"
+        _log("vòng lặp chính VỠ: " + traceback.format_exc())
+        console.event("LỖI · vòng lặp chính vỡ: " + traceback.format_exc(limit=3),
+                      category="system", level="error")
     finally:
-        engine.stop_loop()
-    return 0
-
-
-# ═══════════════════════════════════════════════════════ chế độ GUI
-def _splash() -> None:
-    """MÀN HÌNH CHỜ — clone từ `live_server.run_gui()` của hệ XAUUSD.
-
-    Giữ nguyên bố cục và luồng của bản gốc: cửa sổ `overrideredirect` căn giữa
-    480×260, khung viền một pixel, tên thương hiệu cỡ 26 đậm, phụ đề, dòng trạng
-    thái nghiêng, thanh tiến trình 320×4 vẽ bằng `Canvas`, và `perform_load(step)`
-    tự lên lịch qua `after(180, …)`.
-
-    ĐỔI SO VỚI BẢN GỐC — ba chỗ, đều có lý do
-    ==========================================
-    1. BẢNG MÀU. Bản XAUUSD dùng xanh lá trên nền đen (`#35D875` / `#050805`); hệ
-       này là DARK NAVY. Màu lấy thẳng từ `gui_command_center` chứ không chép số:
-       splash lệch tông với cửa sổ chính thì lúc chuyển tiếp thành một cú nháy.
-
-    2. CÁC BƯỚC LÀM VIỆC THẬT. Bản gốc chỉ đếm 180 ms mỗi bước rồi đổi chữ — thanh
-       tiến trình nói "Đang kiểm tra kết nối MT5" trong khi không kiểm gì. Ở đây
-       mỗi bước NẠP THẬT nhóm module tương ứng. Hai cái lợi cộng lại: dòng chữ
-       không nói dối, và phần nạp nặng (pandas, chiến lược) chạy XONG trước khi
-       dựng cửa sổ chính — đúng phần làm người vận hành chờ lâu nhất.
-
-    3. LỖI KHÔNG LÀM CHẾT KHỞI ĐỘNG. Một bước nạp hỏng chỉ ghi log rồi đi tiếp:
-       splash là lớp hiển thị, và module hỏng thật sẽ nổ đúng chỗ của nó ở
-       `TradingGUIV2()` với traceback đầy đủ. Chết ở đây là chôn mất traceback ấy.
-    """
-    import tkinter as tk
-
-    from src.python.core.gui_command_center import (
-        C_BG_ROOT, C_BLUE, C_BORDER, C_TEXT_DIM, C_TEXT_MUT)
-
-    splash = tk.Tk()
-    splash.title(f"{BOT_NAME} - Loading")
-    splash.overrideredirect(True)
-
-    w, h = 480, 260
-    sw, sh = splash.winfo_screenwidth(), splash.winfo_screenheight()
-    splash.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
-    splash.configure(bg=C_BG_ROOT)
-    splash.attributes("-topmost", True)
-    splash.focus_force()
-
-    border = tk.Frame(splash, bg=C_BORDER, bd=1)
-    border.place(relx=0, rely=0, relwidth=1, relheight=1)
-    container = tk.Frame(border, bg=C_BG_ROOT)
-    container.place(relx=0.01, rely=0.02, relwidth=0.98, relheight=0.96)
-
-    tk.Label(container, text="THE CHEOPARD", font=("Consolas", 26, "bold"),
-             fg=C_BLUE, bg=C_BG_ROOT).pack(pady=(45, 8))
-    tk.Label(container, text="FX PORTFOLIO QUANTITATIVE SYSTEM",
-             font=("Consolas", 10, "bold"),
-             fg=C_TEXT_DIM, bg=C_BG_ROOT).pack(pady=(0, 25))
-
-    status_lbl = tk.Label(container, text="Đang khởi động hệ thống...",
-                          font=("Consolas", 10, "italic"),
-                          fg=C_TEXT_MUT, bg=C_BG_ROOT)
-    status_lbl.pack(pady=(0, 8))
-
-    canvas_w = 320
-    canvas = tk.Canvas(container, width=canvas_w, height=4, bg=C_BG_ROOT,
-                       highlightthickness=0)
-    canvas.pack()
-    bar = canvas.create_rectangle(0, 0, 0, 4, fill=C_BLUE, width=0)
-
-    def perform_load(step: int = 0) -> None:
         try:
-            if step < len(SPLASH_STEPS):
-                text, ratio, work = SPLASH_STEPS[step]
-                status_lbl.configure(text=text)
-                canvas.coords(bar, 0, 0, int(canvas_w * ratio), 4)
-                # VẼ TRƯỚC, LÀM SAU: `update()` đẩy khung hình ra màn hình trước khi
-                # bước nạp chặn vòng lặp Tk. Đảo thứ tự thì người vận hành thấy chữ
-                # của bước TRƯỚC trong suốt lúc bước NÀY chạy.
-                splash.update()
-                if work is not None:
-                    try:
-                        work()
-                    except Exception as exc:
-                        _log(f"[SPLASH] bước {step} ({text}) lỗi: "
-                             f"{type(exc).__name__}: {exc}")
-                splash.after(SPLASH_STEP_MS, lambda: perform_load(step + 1))
-            else:
-                splash.destroy()
+            engine.stop_loop()
         except Exception:
-            _log("[SPLASH] vỡ: " + traceback.format_exc())
-            try:
-                splash.destroy()
-            except Exception:
-                pass
-
-    splash.after(50, lambda: perform_load(0))
-    splash.mainloop()
-
-
-def run_gui() -> int:
-    try:
-        from src.python.core.gui_command_center import TradingGUIV2
-    except ImportError as exc:
-        _show_error(f"Thiếu thư viện hoặc module:\n\n{exc}\n\n"
-                 f"Cài lại bằng:\n"
-                 f"    .venv311\\Scripts\\python.exe -m pip install -r requirements.txt")
-        return 1
-    except Exception:
-        _show_error(traceback.format_exc())
-        return 1
-
-    # SỔ VÒNG ĐỜI — ghi mọi mốc khởi động/thoát ra tệp riêng.
-    #
-    # VÌ SAO CẦN: ngày 14/08 giao diện tự thoát sau vài phút và KHÔNG để lại dấu vết
-    # nào — `pythonw` không có console, khoá được nhả sạch nên nhìn từ ngoài giống
-    # như người dùng tự đóng. Không có sổ này thì không cách nào biết nó thoát vì
-    # cửa sổ bị đóng hay vì mainloop vỡ.
-    # Uỷ quyền cho `_log` ở cấp module — cùng một tệp, cùng một định dạng.
-    #
-    # Bản cũ tự dựng dòng bằng `_dt.now().strftime(chr(37)+chr(89))`, tức mã định
-    # dạng `%Y` → chỉ ghi được NĂM. Mọi mốc trong sổ đều mang dấu thời gian "2026",
-    # nên không dựng lại được thứ tự sự kiện — đúng thứ mà sổ này sinh ra để làm.
-    _milestone = _log
-
-    # MÀN HÌNH CHỜ chạy TRƯỚC khi dựng cửa sổ chính: `TradingGUIV2()` mất vài giây
-    # (nạp pandas, chiến lược, dựng 27 hàng ma trận) và trong quãng đó màn hình
-    # hoàn toàn trống. Splash lấp đúng quãng đó, và các bước nạp của nó cũng làm
-    # ấm sẵn phần import nặng nhất.
-    _milestone("splash BẮT ĐẦU")
-    try:
-        _splash()
-    except Exception:
-        # Splash chỉ là lớp hiển thị — hỏng thì đi thẳng vào giao diện chính, đừng
-        # chặn khởi động vì một cửa sổ trang trí.
-        _milestone("splash VỠ (bỏ qua): " + traceback.format_exc())
-    _milestone("splash XONG")
-
-    _milestone("BẮT ĐẦU dựng giao diện")
-    try:
-        gui = TradingGUIV2()
-        # Đặt tên cửa sổ TẠI ĐÂY chứ không sửa `gui_command_center`: tệp đó kế thừa
-        # nguyên vẹn, và tên bot đến từ `.env` nên nó là việc của điểm vào.
+            _log("stop_loop lỗi: " + traceback.format_exc())
+        # Gỡ cầu log TRƯỚC báo cáo tắt máy: `stop_loop` có thể còn phát log, và một
+        # console đã bắt đầu in báo cáo tổng kết thì không nên bị chen dòng vào giữa.
         try:
-            gui.root.title(WINDOW_TITLE)
+            _logger.attach_console_sink(None)
         except Exception:
             pass
-        _milestone("đã dựng xong, vào mainloop")
-        gui.run()
-        _milestone("mainloop KẾT THÚC bình thường (cửa sổ đã đóng)")
-    except Exception:
-        _milestone("mainloop VỠ: " + traceback.format_exc())
-        _show_error(traceback.format_exc())
-        return 1
+        console.shutdown_report(reason)
+        _log(f"đã thoát ({reason or 'bình thường'})")
     return 0
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=f"{BOT_NAME} — điểm vào")
-    ap.add_argument("--cli", action="store_true",
-                    help="chạy chế độ dòng lệnh, không mở giao diện")
+    ap = argparse.ArgumentParser(description=f"{BOT_NAME} — điểm vào (console-only)")
     ap.add_argument("--force", action="store_true",
                     help="bỏ qua khoá chống chạy nhiều bản")
     ap.add_argument("--keep", action="store_true",
-                    help="giữ bản đang chạy, chỉ đưa cửa sổ của nó lên trước")
+                    help="thoát nếu đã có bản đang chạy, thay vì thay thế nó")
+    ap.add_argument("--heartbeat", type=float, default=None,
+                    help="giây giữa hai nhịp tim (mặc định 45)")
+    ap.add_argument("--no-json", action="store_true",
+                    help="không ghi sổ JSONL có cấu trúc (chỉ để chẩn đoán)")
+    ap.add_argument("--quiet", action="store_true",
+                    help="chỉ hiện cảnh báo/lỗi và nhịp tim")
+    # `--cli` giữ lại làm cờ KHÔNG TÁC DỤNG, không xoá: `start_live_server.bat`, tài
+    # liệu và thói quen của người vận hành đều còn dùng nó. Xoá thì lệnh cũ chết với
+    # "unrecognized arguments" — một cái chết vô nghĩa cho thứ giờ đã là mặc định.
+    ap.add_argument("--cli", action="store_true", help=argparse.SUPPRESS)
     a, _ = ap.parse_known_args(argv)
 
     if not a.force and not _acquire_lock():
-        # ĐÃ CÓ BẢN ĐANG CHẠY — và từ 15/08/2026 xử lý mặc định là THAY THẾ NÓ.
-        #
-        # Bản trước đưa cửa sổ CŨ lên trước rồi tự thoát. Ý định đúng (chống mở bốn
-        # tiến trình cùng lúc như hôm 14/08) nhưng hệ quả tệ hơn: sau mỗi lần sửa
-        # code, nhấn VBS chỉ FOCUS lại tiến trình cũ đang chạy mã cũ, và người vận
-        # hành thấy "bản build lúc 12:30" dù đã sửa xong từ lâu. Một cơ chế chống
-        # nhân bản biến thành cơ chế khoá cứng vào bản cũ.
-        #
-        # Nay: dừng bản cũ, rồi chạy bản mới. `--keep` giữ hành vi cũ nếu ai cần.
         old = _running_pid()
         if a.keep:
-            if not _bring_window_to_front():
-                _show_error(f"{BOT_NAME} ĐANG CHẠY (PID {old}).\n\n"
-                            f"Bỏ --keep để tự thay thế, hoặc đóng bản cũ rồi mở lại.")
+            _fail(f"{BOT_NAME} ĐANG CHẠY (PID {old}). Bỏ --keep để tự thay thế.")
             return 0
-        victims = _other_instance_pids() or ([old] if old else [])
-        if victims and all(_terminate(v) for v in victims):
-            _milestone("da dung ban cu PID " + ",".join(str(v) for v in victims)
-                       + ", khoi dong ban moi")
+        # MẶC ĐỊNH LÀ THAY THẾ, không phải nhường. Bản trước nhường cho tiến trình
+        # cũ, và hệ quả tệ hơn vấn đề nó chữa: sau mỗi lần sửa code, chạy lại chỉ
+        # focus vào tiến trình đang chạy MÃ CŨ, và người vận hành thấy build cũ dù
+        # đã sửa xong từ lâu. Một cơ chế chống nhân bản biến thành khoá cứng vào
+        # bản cũ.
+        if old and _terminate(old):
+            _log(f"đã dừng bản cũ PID {old}, khởi động bản mới")
             _acquire_lock()
         else:
-            _show_error(f"{BOT_NAME} ĐANG CHẠY (PID {old}) và KHÔNG dừng được.\n\n"
-                        f"Đóng nó bằng tay rồi mở lại, hoặc chạy với --force.\n"
-                        f"Khoá: {LOCK_FILE}")
+            _fail(f"{BOT_NAME} ĐANG CHẠY (PID {old}) và KHÔNG dừng được.\n"
+                  f"Dừng nó bằng tay rồi chạy lại, hoặc thêm --force.\n"
+                  f"Khoá: {LOCK_FILE}")
             return 1
 
+    from src.python.core.ops_console import HEARTBEAT_SECONDS
+
     try:
-        return run_cli() if a.cli else run_gui()
+        return run_console(
+            heartbeat=HEARTBEAT_SECONDS if a.heartbeat is None else a.heartbeat,
+            structured=not a.no_json, quiet=a.quiet)
+    except Exception:
+        _fail("khởi động thất bại:\n" + traceback.format_exc())
+        return 1
     finally:
         _release_lock()
 

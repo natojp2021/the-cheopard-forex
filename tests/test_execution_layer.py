@@ -813,54 +813,20 @@ def test_summarise_groups_by_close_reason():
 
 
 # ═════════════════════════════════════════════════════ 11. gọi ngược về giao diện
-def test_ui_callback_never_touches_tk_from_background_thread():
-    """`_ui()` chỉ XẾP HÀNG, KHÔNG chạm Tk — gọi được từ bất kỳ luồng nào.
-
-    Lỗi thật gặp 15/08/2026: nút RUN chạy việc trên luồng nền (khởi động vòng lặp,
-    đọc MT5 — vài giây), rồi gọi `root.after()` để quay về luồng giao diện. Nếu
-    người dùng đóng cửa sổ trong lúc đó thì Tk đã tắt vòng lặp chính và `after()`
-    ném `RuntimeError: main thread is not in main loop` — luồng nền chết kèm nguyên
-    traceback 12 dòng đổ vào timeline.
-
-    Bọc `try/except` quanh `after()` KHÔNG đủ: `after()` đăng ký một lệnh Tcl, việc
-    đó vốn không an toàn giữa các luồng, và kiểm `winfo_exists()` trước đó chỉ thu
-    hẹp cửa sổ đua chứ không đóng nó. Nay `_ui` đẩy vào `queue.Queue` — an toàn
-    giữa các luồng theo thiết kế — và `process_queues` trên luồng chính là bên DUY
-    NHẤT chạm Tk.
-
-    Test kiểm HÀNH VI: đưa vào một `root` mà mọi thao tác đều nổ, rồi đòi `_ui`
-    vẫn im lặng và callback vẫn tới nơi khi hàng đợi được rút.
-    """
-    import queue as _queue
-
-    from src.python.core import gui_command_center as G
-
-    class _ExplodingRoot:
-        """Mọi lối chạm Tk đều nổ — `_ui` không được đi qua lối nào trong số đó."""
-
-        def winfo_exists(self):
-            raise AssertionError("_ui KHÔNG được hỏi Tk từ luồng nền")
-
-        def after(self, *_a):
-            raise AssertionError("_ui KHÔNG được gọi after() từ luồng nền")
-
-    gui = G.TradingGUIV2.__new__(G.TradingGUIV2)
-    gui.root = _ExplodingRoot()
-    gui.ui_queue = _queue.Queue()
-
-    called = []
-    gui._ui(lambda: called.append(1))
-    gui._ui(called.append, 2)
-
-    assert called == [], "callback chạy NGAY trên luồng gọi — sai luồng"
-    assert gui.ui_queue.qsize() == 2, "callback không vào hàng đợi"
-
-    # Luồng CHÍNH rút hàng đợi (đúng việc `process_queues` làm mỗi 100 ms).
-    while not gui.ui_queue.empty():
-        fn, args = gui.ui_queue.get_nowait()
-        fn(*args)
-    assert called == [1, 2], "callback không tới nơi sau khi rút hàng đợi"
-
+# ĐÃ XOÁ 19/08/2026: `test_ui_callback_never_touches_tk_from_background_thread`.
+#
+# Test đó ghim một bất biến THẬT và quan trọng — `_ui()` chỉ được xếp hàng, không
+# được chạm Tk từ luồng nền, vì `root.after()` gọi từ luồng nền ném `RuntimeError:
+# main thread is not in main loop` và giết luồng nền kèm 12 dòng traceback.
+#
+# Nhưng bất biến đó nói về một thứ KHÔNG CÒN TỒN TẠI: `TradingGUIV2` đã bị xoá cùng
+# đợt chuyển sang console-only. Giữ test cho một lớp đã xoá là giữ một test luôn
+# xanh mà không đo gì — đúng loại test làm người đọc tin rằng có lớp bảo vệ ở chỗ
+# không có gì cả.
+#
+# Đáng ghi lại: chính họ lỗi này là một trong ba lý do xoá giao diện. Console-only
+# không có luồng giao diện, nên cả lớp lỗi "gọi Tk từ luồng sai" biến mất theo —
+# không phải được vá, mà là không còn chỗ để xảy ra.
 
 def test_engine_finalises_positions_closed_on_broker(monkeypatch, _ctl, tmp_path):
     """Vị thế biến mất khỏi broker → sổ phải được dọn VÀ ghi nhận.

@@ -171,6 +171,11 @@ class TradingEngine:
         self._bar_index_at = 0.0
         self._last_spread_log = 0.0
 
+        # ── CỔNG SPREAD: bộ nhớ cho `_log_spread_gate`. Xem docstring ở đó cho lý do
+        # vì sao hai lớp khử lặp cũ không chặn được 590 dòng/49 phút.
+        self._spread_over_n = 0          # số công cụ vượt trần ở LẦN GHI gần nhất
+        self._spread_logged_at = 0.0
+
         # Tên khoá phải khớp ĐÚNG những gì `gui_command_center` đọc. Bản đầu ghi
         # `"mt"` trong khi GUI đọc `state["mt5_connected"]` — thẻ MT5 TERMINAL hiện
         # DISCONNECTED suốt dù kết nối vẫn tốt, và không có lỗi nào để lần ra.
@@ -738,16 +743,37 @@ class TradingEngine:
             return
 
         rows.sort(key=lambda r: (r[3] is None, -(r[3] or 0)))
-        self.log(f"SPREAD THẬT ({len(rows)} công cụ) — pip · ước lượng · lệch")
-        for sym, pips, est, diff in rows:
-            self.log(f"   {sym:8} {pips:6.2f}"
-                     + (f"  ({est:.1f}  {diff:+.0f}%)" if est is not None else ""))
+
+        # TOÀN BỘ 27 công cụ vào SỔ CÓ CẤU TRÚC, không lên console.
+        #
+        # Đây là phép đo dựng nên phân phối chi phí thật của 21 cặp chéo — giả định
+        # lớn nhất còn lại của cả hệ — nên KHÔNG được cắt bớt số liệu. Nhưng nó là
+        # TRẠNG THÁI, không phải sự kiện: in 28 dòng mỗi 30 phút cho ra 1.344 dòng
+        # mỗi ngày (đo trên nhật ký VPS 18/08/2026) và chúng nuốt mọi dòng có ích.
+        #
+        # Nên chia đôi: số liệu đầy đủ đi vào JSONL (truy vấn được, không cạnh tranh
+        # chỗ với dòng khác), console nhận đúng một dòng tóm tắt.
+        from src.python.utils import ops_log
+
+        from src.python.core.config import SPREAD_CAP_BPS
+
+        ops_log.emit("market", "spread_survey", cap_bps=SPREAD_CAP_BPS,
+                     rows=[{"symbol": sym, "pips": round(pips, 3),
+                            "estimate_pips": est,
+                            "diff_pct": None if diff is None else round(diff, 1)}
+                           for sym, pips, est, diff in rows])
+
         got = [r[3] for r in rows if r[3] is not None]
-        if got:
-            wider = sum(1 for d in got if d > 0)
-            med = sorted(got)[len(got) // 2]
-            self.log(f"   → {wider}/{len(got)} rộng hơn ước lượng · "
-                     f"trung vị lệch {med:+.0f}%")
+        if not got:
+            self.log(f"SPREAD THẬT {len(rows)} công cụ — chưa có mốc ước lượng để so")
+            return
+        wider = sum(1 for d in got if d > 0)
+        med = sorted(got)[len(got) // 2]
+        worst = rows[0]
+        self.log(f"SPREAD THẬT {len(rows)} công cụ · {wider}/{len(got)} rộng hơn ước "
+                 f"lượng · trung vị lệch {med:+.0f}% · rộng nhất {worst[0]} "
+                 f"{worst[1]:.2f} pip ({worst[3]:+.0f}%) — chi tiết trong "
+                 f"logs/market/*.jsonl")
 
     # ─────────────────────────────────────────────── kế hoạch lệnh
     def _maybe_build_plan(self) -> None:
@@ -1322,14 +1348,79 @@ class TradingEngine:
         # "spread mọi công cụ đã về dưới trần None bps" ngay khi thị trường đóng —
         # một chuyển-trạng-thái GIẢ do chính cách bỏ qua tạo ra.
         if not self.state.get("market_closed"):
-            s = g.get("spread", {})
-            over = s.get("over") or {}
-            self._log_change(
-                "spread", str(sorted(over.items())),
-                (f"spread VƯỢT trần {s.get('cap_bps')} bps: "
-                 f"{', '.join(f'{k} {v}' for k, v in over.items())}")
-                if over else
-                f"spread mọi công cụ đã về dưới trần {s.get('cap_bps')} bps")
+            self._log_spread_gate(g.get("spread", {}))
+
+    # Số công cụ phải đổi ít nhất bằng đây mới coi là "đổi đáng kể" và ghi lại.
+    _SPREAD_STEP = 5
+    # Đang giãn liên tục thì nhắc lại mỗi ngần này giây, để không ai tưởng hệ treo.
+    # 15 phút: quãng giãn quanh giao ca ngày dài ~50 phút, tức ~3 dòng cho cả đợt.
+    _SPREAD_REMIND = 900.0
+
+    def _log_spread_gate(self, spread_state: Dict[str, Any]) -> None:
+        """Cổng spread: ghi lúc ĐỔI TRẠNG THÁI, không ghi lại mỗi nhịp.
+
+        NGUỒN SPAM SỐ MỘT CỦA CẢ HỆ — đo trên nhật ký VPS 18/08/2026
+        ============================================================
+        Từ 04:11 tới 05:00 (49 phút) nhật ký có **~590 dòng** như nhau, mỗi 5 giây một
+        dòng, mỗi dòng liệt kê đủ 20 công cụ:
+
+            04:11:34 | spread VƯỢT trần 3.0 bps: AUDCAD 7.0, AUDCHF 8.85, AUDJPY 6.27, …
+            04:11:38 | spread VƯỢT trần 3.0 bps: AUDCAD 7.0, AUDCHF 8.85, AUDJPY 6.35, …
+
+        Hai lớp khử lặp ĐÃ CÓ mà cả hai đều không chặn được, vì cùng một lý do:
+
+          · `log()` so sánh NGUYÊN VĂN dòng log. Con số bps đổi mỗi tick, nên hai dòng
+            liền nhau không bao giờ giống hệt.
+          · `_log_change` so sánh `str(sorted(over.items()))` — tức dấu vân tay CÓ
+            CHỨA chính những con số đổi liên tục ấy.
+
+        Bài học: dấu vân tay của một trạng-thái phải chỉ chứa phần ĐỊNH TÍNH. Nhồi số
+        đo vào khoá dedup là tự vô hiệu hoá lớp dedup mà vẫn tưởng đang có nó.
+
+        Thời điểm 04:11–05:00 giờ máy = 23:11–00:00 giờ Praha, tức đúng quãng giao ca
+        ngày của broker: spread giãn gấp 3–5 lần là chuyện BÌNH THƯỜNG, xảy ra MỖI
+        NGÀY. Nên đây không phải sự cố cần báo 590 lần; nó là một trạng thái cần báo
+        hai lần — lúc vào và lúc ra.
+
+        BA MỨC, KHÔNG PHẢI MỘT
+        =======================
+          1. VÀO/RA trạng thái giãn — luôn ghi. Đây là thứ người vận hành cần.
+          2. Đang giãn mà số công cụ đổi ĐÁNG KỂ (≥ `_SPREAD_STEP`) — ghi lại, vì
+             "3 công cụ giãn" và "24 công cụ giãn" là hai tình huống khác nhau.
+          3. Đang giãn, số lượng gần như không đổi — IM, tối đa một dòng nhắc mỗi
+             `_SPREAD_REMIND` để không ai tưởng hệ đã treo.
+
+        Danh sách đầy đủ 20 công cụ KHÔNG vào console: nó nằm trong
+        `state["guards"]["spread"]["over"]` (bảng trạng thái đọc được bất cứ lúc nào)
+        và trong sổ JSONL. Console chỉ cần đếm và ba cái tệ nhất.
+        """
+        over = spread_state.get("over") or {}
+        cap = spread_state.get("cap_bps")
+        total = len(self.state.get("spread") or {}) or len(over)
+        prev_n = self._spread_over_n
+        now = time.time()
+
+        if not over:
+            self._spread_over_n = 0
+            self._spread_logged_at = 0.0
+            if prev_n:
+                self.log(f"spread mọi công cụ đã về dưới trần {cap} bps "
+                         f"(vừa rồi {prev_n} công cụ vượt)")
+            return
+
+        worst = sorted(over.items(), key=lambda kv: -kv[1])[:3]
+        detail = " · ".join(f"{k} {v:.1f}" for k, v in worst)
+        big_change = abs(len(over) - prev_n) >= self._SPREAD_STEP
+        stale = now - self._spread_logged_at >= self._SPREAD_REMIND
+        if prev_n == 0 or big_change or stale:
+            self._spread_over_n = len(over)
+            self._spread_logged_at = now
+            self.log(f"spread VƯỢT trần {cap} bps: {len(over)}/{total} công cụ "
+                     f"(tệ nhất {detail}) — chi tiết trong thẻ GUARD/sổ JSONL")
+        # KHÔNG có nhánh `else`, và đó là chủ ý: `_spread_over_n` giữ số đếm của LẦN
+        # GHI gần nhất, không phải của nhịp gần nhất. Cập nhật nó mỗi nhịp thì một
+        # chuỗi thay đổi +1 liên tiếp sẽ trôi từ 3 lên 24 công cụ mà không nhịp nào
+        # vượt ngưỡng "đổi đáng kể" — tức im lặng đúng lúc tình hình xấu dần.
 
     def _risk_emails(self, *, dd: float, tripped: bool, equity: float,
                      day_start: float, halt_reason: str,

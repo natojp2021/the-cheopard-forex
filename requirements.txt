@@ -11,11 +11,20 @@ joblib>=1.5
 scikit-learn>=1.7.2,<1.8
 scipy>=1.10
 polars>=1.0
-matplotlib>=3.10
 
-# Windows live-trading UI and MT5 bridge
-customtkinter>=5.2
+# Console van hanh (thay bang dieu khien Tk, 19/08/2026)
+rich>=13.7
+
+# MT5 bridge
 MetaTrader5>=5.0.45 ; sys_platform == "win32"
+
+# XOA 19/08/2026 cung dot chuyen sang console-only:
+#   customtkinter  bang dieu khien Tk da bi xoa (gui_command_center.py, ui_patches.py)
+#   matplotlib     chi duoc nap boi bang dieu khien do; khong module nao con import
+# Ca hai deu la phu thuoc NANG nap vao cung tien trinh voi vong lap giao dich. Do la
+# RAM va CPU tra cho mot cua so khong ai ngoi truoc tren VPS - va may nay da co tien
+# le bi kill vi het RAM. Giu lai "cho chac" nghia la van phai nap, kiem va bao tri.
+# Can ve bieu do cho nghien cuu thi cai matplotlib rieng, dung dua no vao duong live.
 
 # Macro/News sentiment research (2026-07-23) — cào tin (Finnhub/NewsAPI/Alpha Vantage) + Gemini API
 requests>=2.31

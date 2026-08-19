@@ -65,7 +65,18 @@ def _modules() -> list:
 # đúng lớp lỗi đó.
 LIVE_IMPORTS = [
     "src.python.core.engine",
-    "src.python.core.gui_command_center",
+    "src.python.live_server",
+    "src.python.ops_ctl",
+    # THAY 19/08/2026 cho `gui_command_center` (đã xoá cùng đợt chuyển console-only).
+    # Ba module dưới là đường TRÌNH BÀY mới, và chúng phải nằm trong danh sách này
+    # chứ không chỉ được biên dịch: `ops_view` import registry + config + asset
+    # profile, `ops_console` import rich + ops_log. Một trong số đó vỡ thì bot khởi
+    # động rồi chết ngay ở dòng dựng console — tức không quan sát được gì, đúng lớp
+    # lỗi mà bước này sinh ra để bắt.
+    "src.python.core.ops_console",
+    "src.python.core.ops_theme",
+    "src.python.core.ops_view",
+    "src.python.utils.ops_log",
     "src.python.core.runtime_meta",
     "src.python.core.infra.ftmo",
     "src.python.core.infra.ftmo_guard",

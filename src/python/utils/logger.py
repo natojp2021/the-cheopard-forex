@@ -29,6 +29,35 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _loggers: Dict[str, logging.Logger] = {}
 _file_handler: Optional[logging.Handler] = None
 
+# BỘ NHẬN DÒNG LOG CHO CONSOLE VẬN HÀNH — xem `attach_console_sink()`.
+_console_sink = None
+
+
+def attach_console_sink(sink) -> None:
+    """Chuyển hướng phần CONSOLE của mọi logger sang `sink(message, levelno)`.
+
+    VÌ SAO CẦN — HAI ĐỊNH DẠNG TRÊN CÙNG MỘT MÀN HÌNH
+    ==================================================
+    Hệ có HAI đường ghi log song song, và chúng đến từ hai lớp khác nhau:
+
+        engine.log(...)            -> `log_callback` do điểm vào truyền vào
+        utils.logger.log(...)      -> handler console của chính logger này
+                                      (mt5_bars, fx_data, ftmo, news_guard…)
+
+    Với giao diện đồ hoạ thì cả hai gặp nhau ở bảng log, vì `gui_command_center`
+    thay `sys.stderr` bằng `_Redirector` — tức nó bắt được cả nhánh thứ hai. Console
+    không có mẹo đó, nên nếu không bắc cầu ở đây thì màn hình có hai định dạng lẫn
+    nhau: dòng của engine đã tô màu và gắn nhóm, còn dòng của `mt5_bars` ra nguyên
+    dạng `2026-08-19 22:33:55 | INFO | cheopard | …`.
+
+    Tệ hơn cái xấu: nhánh thứ hai sẽ KHÔNG đi qua bộ nén spam và KHÔNG vào sổ JSONL.
+    Đúng những dòng ồn nhất đã đo được (`[FX-M1]`, `DỮ LIỆU CŨ`) lại thuộc nhánh này.
+
+    Chỉ nhận MỘT `sink`: hai bộ hiển thị cùng lúc là hai lần in cùng một dòng.
+    """
+    global _console_sink
+    _console_sink = sink
+
 
 def _usable_stream(stream) -> bool:
     """Luồng này ghi được không.
@@ -94,6 +123,15 @@ class _ConsoleHandler(logging.Handler):
     """
 
     def emit(self, record: logging.LogRecord) -> None:
+        # Console vận hành đã gắn -> giao dòng cho nó và DỪNG. Nó tự lo dấu thời
+        # gian, màu, nhóm, nén spam và sổ JSONL; ghi thêm ra stderr ở đây là in đôi.
+        if _console_sink is not None:
+            try:
+                _console_sink(record.getMessage(), record.levelno)
+                return
+            except Exception:
+                # Bộ hiển thị hỏng thì rơi về stderr chứ không mất dòng log.
+                pass
         stream = sys.stderr
         if not _usable_stream(stream):
             return

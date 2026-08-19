@@ -47,6 +47,33 @@ import pandas as pd
 # cửa sổ dài nhất đang dùng (chân H4 cần 96 nến H4 = 5.760 nến M1) và vẫn nhanh.
 DEFAULT_BARS = 200_000
 
+# BẬC GIẢM DẦN số nến khi terminal không trả nổi mức đang xin.
+#
+# LỖI ĐÃ SỬA 19/08/2026 — MỘT CÔNG CỤ HỎNG VĨNH VIỄN, MỖI GIỜ BA DÒNG LỖI
+# =======================================================================
+# Nhật ký VPS 18/08 lặp lại y nguyên mỗi giờ, suốt cả ngày, chỉ với EURUSD:
+#
+#     [FX-M1] fetch dữ liệu MT5 thất bại/không đủ bar cho EURUSD
+#             (copy_rates_from_pos trả về 0/1 bar, thử lại 2 lần đều hỏng)
+#     ⚠️ DỮ LIỆU CŨ · EURUSD → đang dùng PARQUET LỊCH SỬ
+#     LỖI · dựng kế hoạch lệnh: Không tìm thấy M1 cho EURUSD
+#
+# Vòng thử lại CŨ chỉ lặp lại **đúng một yêu cầu 200.000 nến** sau 0,3s rồi 1,0s.
+# Nó chữa được sự cố THOÁNG QUA (đúng thứ nó sinh ra để chữa), nhưng ở đây nguyên
+# nhân không thoáng qua: terminal chỉ đơn giản KHÔNG CÓ 200.000 nến M1 cho công cụ
+# đó — chưa tải xong lịch sử, hoặc bị chặn bởi "Max bars in chart" của chính
+# terminal. Xin lại cùng con số đó thêm hai lần thì lần nào cũng hỏng, mãi mãi.
+#
+# Điều trái khoáy: hàm này khai `min_bars=1` — nó nói rõ "chỉ cần biết CÓ nến hay
+# không". Vậy mà nó không bao giờ thử XIN ít hơn. Yêu cầu và điều kiện chấp nhận
+# lệch nhau 200.000 lần.
+#
+# Các bậc dưới đây đi từ mức thừa thãi xuống mức tối thiểu dùng được. 5.760 nến M1 =
+# 96 nến H4, tức cửa sổ dài nhất của cả danh mục; 2.000 là mức "có dữ liệu để tính
+# gì đó" cho các chân M30/H1. Nến ít hơn mức chân cần thì cổng chặn ở TẦNG CHIẾN
+# LƯỢC lo — nơi biết cửa sổ của chính nó, chứ không phải ở đây.
+DEGRADE_BARS = (200_000, 50_000, 10_000, 2_000)
+
 
 def _timeframe_const(mt5, minutes: int = 1):
     return getattr(mt5, "TIMEFRAME_M1")
@@ -99,7 +126,8 @@ _fetch_retry_stats = {"lan_hong": 0, "cuu_duoc": 0, "ngoai_le": 0}
 
 def copy_rates_retry(mt5, symbol: str, timeframe, count: int, *, tag: str,
                      min_bars: Optional[int] = None,
-                     wait_seconds: tuple = (0.3, 1.0)):
+                     wait_seconds: tuple = (0.3, 1.0),
+                     quiet: bool = False):
     """SSOT fetch nến có THỬ LẠI. Trả `rates` hoặc `None` (đã log giúp bên gọi).
 
     CLONE từ `live_strategies/market_guards.copy_rates_retry` của hệ XAUUSD.
@@ -124,6 +152,11 @@ def copy_rates_retry(mt5, symbol: str, timeframe, count: int, *, tag: str,
     backtest/SimBroker), hàm trả `None` NGAY, không retry và không `sleep`. Dữ liệu
     backtest tất định nên gọi lại chắc chắn ra cùng kết quả, và `sleep` trong vòng
     lặp hàng chục nghìn chu kỳ sẽ treo backtest. Nhờ vậy parity giữ nguyên tuyệt đối.
+
+    `quiet=True` vẫn thử lại và vẫn đếm thống kê, nhưng KHÔNG ghi log thất bại. Dành
+    cho người gọi đã có phương án dự phòng và sẽ tự báo kết quả cuối cùng — xem
+    `_fetch_degrading`. Không có cờ này thì một lượt giảm-dần bốn bậc sinh bốn dòng
+    lỗi cho một sự cố duy nhất.
     """
     import time as _time
 
@@ -140,8 +173,9 @@ def copy_rates_retry(mt5, symbol: str, timeframe, count: int, *, tag: str,
             return mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
         except Exception as exc:                                   # noqa: BLE001
             _fetch_retry_stats["ngoai_le"] = _fetch_retry_stats.get("ngoai_le", 0) + 1
-            log_fetch_failure_throttled(
-                tag, symbol, f"copy_rates_from_pos NÉM LỖI: {exc}")
+            if not quiet:
+                log_fetch_failure_throttled(
+                    tag, symbol, f"copy_rates_from_pos NÉM LỖI: {exc}")
             return None
 
     rates = _fetch_once()
@@ -152,8 +186,9 @@ def copy_rates_retry(mt5, symbol: str, timeframe, count: int, *, tag: str,
     _fetch_retry_stats["lan_hong"] += 1
 
     if not isinstance(get_clock(), RealClock):
-        log_fetch_failure_throttled(
-            tag, symbol, f"copy_rates_from_pos trả về {n0}/{can} bar")
+        if not quiet:
+            log_fetch_failure_throttled(
+                tag, symbol, f"copy_rates_from_pos trả về {n0}/{can} bar")
         return None
 
     for attempt, waited in enumerate(wait_seconds, start=1):
@@ -169,10 +204,58 @@ def copy_rates_retry(mt5, symbol: str, timeframe, count: int, *, tag: str,
                 f"{_fetch_retry_stats['lan_hong']} lần hỏng từ lúc khởi động)")
             return rates
 
-    log_fetch_failure_throttled(
-        tag, symbol,
-        f"copy_rates_from_pos trả về {n0}/{can} bar, thử lại "
-        f"{len(wait_seconds)} lần đều hỏng")
+    if not quiet:
+        log_fetch_failure_throttled(
+            tag, symbol,
+            f"copy_rates_from_pos trả về {n0}/{can} bar, thử lại "
+            f"{len(wait_seconds)} lần đều hỏng")
+    return None
+
+
+def _fetch_degrading(mt5, symbol: str, n_bars: int):
+    """Xin nến, GIẢM DẦN số lượng cho tới khi terminal trả được — hoặc hết bậc.
+
+    Vì sao phải giảm dần chứ không xin lại cùng con số: xem `DEGRADE_BARS`.
+
+    Chỉ bậc CUỐI CÙNG được phép ghi log thất bại. Các bậc giữa hỏng là chuyện bình
+    thường (terminal mới chỉ tải một phần lịch sử), và ghi log cho từng bậc sẽ biến
+    một bản vá chống spam thành bốn dòng thay cho một.
+    """
+    tf = _timeframe_const(mt5)
+    steps = [c for c in DEGRADE_BARS if c <= n_bars] or [n_bars]
+    if steps[0] != n_bars:
+        steps.insert(0, n_bars)
+    for i, count in enumerate(steps):
+        last = i == len(steps) - 1
+        # HAI vòng thử lại này giải quyết HAI giả thuyết khác nhau, và trộn chúng
+        # làm hại cả hai:
+        #
+        #   `copy_rates_retry`  "terminal vừa chớp tắt"      -> chờ rồi xin LẠI
+        #   giảm dần bậc        "terminal không có đủ nến"   -> xin ÍT HƠN
+        #
+        # Chờ thêm 1,3 giây rồi xin lại ĐÚNG con số vừa hỏng vì thiếu lịch sử không
+        # mang thêm thông tin nào. Đo được lúc viết test: bốn bậc × ba lượt = 12 lần
+        # gọi và ~5,2 giây `sleep` cho một lượt hỏng hoàn toàn — nhân bảy công cụ là
+        # 36 giây chặn vòng lặp mỗi lần dựng kế hoạch. Vòng lặp chạy mỗi 5 giây.
+        # Thử lại kèm `sleep` ở bậc ĐẦU (bắt sự cố thoáng qua) và bậc CUỐI (trước
+        # khi tuyên bố hỏng hoàn toàn thì chờ thêm một nhịp là đáng). Các bậc GIỮA
+        # không chờ: chúng chỉ đang thăm dò xem terminal có bao nhiêu nến.
+        raw = copy_rates_retry(mt5, symbol, tf, count, tag="FX-M1", min_bars=1,
+                               quiet=not last,
+                               wait_seconds=(0.3, 1.0) if (i == 0 or last) else ())
+        if raw is not None and len(raw) > 0:
+            if i:
+                # Bậc thấp hơn CÓ chạy được -> nói rõ hệ đang chạy trên bao nhiêu
+                # nến. Đây là dòng phân biệt "terminal chưa tải xong lịch sử" với
+                # "terminal hỏng", và không có nó thì hệ chạy trên mẫu ngắn mà
+                # không ai biết là ngắn.
+                from src.python.utils.logger import log
+
+                log(f"[FX-M1] {symbol}: terminal không trả nổi {steps[0]:,} nến, "
+                    f"đã hạ xuống {count:,} và lấy được {len(raw):,} nến. "
+                    f"Chân dài nhất cần 5.760 nến M1 — "
+                    f"{'ĐỦ' if len(raw) >= 5760 else 'CHƯA ĐỦ, mở biểu đồ M1 để ép tải'}.")
+            return raw
     return None
 
 
@@ -202,8 +285,7 @@ def load_m1(symbol: str, mt5=None, *, n_bars: int = DEFAULT_BARS
     #
     # Cổng chặn "không đủ dữ liệu" nằm ở tầng chiến lược, nơi biết cửa sổ của chính
     # nó; đặt ngưỡng ở đây là đặt sai chỗ.
-    raw = copy_rates_retry(mt5, symbol, _timeframe_const(mt5), int(n_bars),
-                           tag="FX-M1", min_bars=1)
+    raw = _fetch_degrading(mt5, symbol, int(n_bars))
     if raw is None or len(raw) == 0:
         return None
 
