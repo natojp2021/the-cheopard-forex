@@ -152,6 +152,30 @@ def evaluate_cross(name: str, price: pd.Series, spec: CX.CrossSpec,
     hơn nhưng dùng được khi khởi động lại tiến trình.
     """
     p = price.dropna()
+    if len(p) == 0:
+        # KHÔNG CÓ DỮ LIỆU THÌ TRẢ SKIP, KHÔNG NÉM NGOẠI LỆ.
+        #
+        # Sự cố 20/08/2026: một công cụ trong rổ (EURUSD) mất sạch nến, nên MỌI
+        # cross rỗng theo. Dòng dưới đây trước là `idx[-1]` trên chỉ mục rỗng →
+        # `IndexError` → `portfolio.live_targets` hỏng → `_build_plan` hỏng →
+        # **cả 27 chân đứng im**, mỗi chu kỳ, trong khi nhịp tim vẫn "MT5 OK".
+        #
+        # Một chân thiếu dữ liệu phải TỰ đứng ngoài, không được kéo theo 26 chân
+        # còn lại. Nguyên nhân gốc sửa ở `shared/mt5_bars.py`; đây là lớp chặn để
+        # cùng hình dạng lỗi lần sau không hạ được cả danh mục.
+        return EntryDecision(
+            timestamp=pd.Timestamp(now_utc) if now_utc is not None
+            else pd.Timestamp.utcnow(),
+            cross=name, action="SKIP",
+            price=float("nan"), log_price=float("nan"), z_score=float("nan"),
+            mu=float("nan"), sigma=float("nan"),
+            half_life_bars=float("inf"), window_bars=0,
+            entry_sigma=cfg.entry_sigma, bars_since_reestimate=0,
+            was_outside_band=0, reentered=False, hl_in_range=False,
+            execution_hour_ok=False,
+            est_cost_bps=float("nan"), est_swap_bps_per_night=float("nan"),
+            timestop_bars=0,
+            reason="KHÔNG CÓ NẾN cho cross này — chân đứng ngoài chu kỳ này")
     lp = np.log(p).to_numpy()
     idx = p.index
     i = len(lp) - 1
@@ -259,6 +283,35 @@ def backtest(cfg: Config = Config(), start: str = "2020-01-01",
                 "gross_bps": t.gross_bps, "cost_bps": t.cost_bps,
                 "swap_bps": round(swap, 3),
                 "net_bps": round(t.gross_bps - t.cost_bps - swap, 3)})
+    if not rows:
+        # KHONG CO LENH NAO VAN PHAI TRA VE KHUNG DUNG HINH DANG.
+        #
+        # `pd.DataFrame([])` khong co cot nao, nen `sort_values("entry_time")`
+        # nem `KeyError: 'entry_time'`. Do 21:52:42 ngay 20/08/2026: ro cross
+        # rong (EURUSD mat nen) -> khong lenh nao -> `_build_plan` hong -> CA 27
+        # CHAN dung im. Dung ho lo cu, lop vo moi: mot ro rong la trang thai
+        # BINH THUONG cua thi truong, khong phai loi lap trinh.
+        #
+        # `daily_pnl` va `stats` deu chay duoc tren khung rong co cot; chung chi
+        # chet khi khung KHONG CO COT.
+        # KIEU DU LIEU CUNG PHAI DUNG, KHONG CHI TEN COT.
+        #
+        # `DataFrame(columns=[...])` cho moi cot dtype `object`. `daily_pnl` lam
+        # `set_index("entry_time").resample("1D")`, va resample tren `Index`
+        # kieu object nem `TypeError: Only valid with DatetimeIndex`. Tuc la sua
+        # nua voi thi chi doi mot ngoai le nay lay mot ngoai le khac.
+        return pd.DataFrame({
+            "entry_time": pd.Series(dtype="datetime64[ns]"),
+            "exit_time": pd.Series(dtype="datetime64[ns]"),
+            "cross": pd.Series(dtype="object"),
+            "side": pd.Series(dtype="int64"),
+            "entry_z": pd.Series(dtype="float64"),
+            "exit_reason": pd.Series(dtype="object"),
+            "bars_held": pd.Series(dtype="int64"),
+            "gross_bps": pd.Series(dtype="float64"),
+            "cost_bps": pd.Series(dtype="float64"),
+            "swap_bps": pd.Series(dtype="float64"),
+            "net_bps": pd.Series(dtype="float64")})
     return pd.DataFrame(rows).sort_values("entry_time").reset_index(drop=True)
 
 

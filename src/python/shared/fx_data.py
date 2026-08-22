@@ -127,10 +127,18 @@ def load_m1(symbol: str) -> pd.DataFrame:
         df = mt5_bars.load_m1(symbol)
         if df is not None and not df.empty:
             _MT5_BARS_MISSING.pop(symbol, None)
+            # GHI SỔ TUỔI DỮ LIỆU ngay tại chỗ nến vừa nạp — nguyên liệu cho cổng
+            # chặn dữ liệu ôi ở `engine._build_plan`. Xem `mt5_bars.note_bars`.
+            mt5_bars.note_bars(symbol, df)
             return df
         _warn_stale_source(symbol)
 
-    return _load_m1_parquet(symbol)
+    df = _load_m1_parquet(symbol)
+    # Nhánh parquet cũng PHẢI vào sổ, và đây mới là nhánh nguy hiểm: nó trả một
+    # DataFrame hoàn toàn hợp lệ của tháng trước (sự cố 15/08/2026, cũ 28 ngày).
+    from src.python.shared import mt5_bars as _MB
+    _MB.note_bars(symbol, df)
+    return df
 
 
 # Lần cuối đã cảnh báo thiếu nến MT5, theo từng công cụ.
@@ -219,7 +227,22 @@ def build_bars(m1: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     """
     rule = TF_RULE[timeframe]
     cov = 0.5 if pd.Timedelta(rule) >= pd.Timedelta("4h") else 1.0
-    g = m1.resample(rule, origin="start_day", closed="left", label="left")
+    # KHÔNG truyền `origin=` cho `"1D"` — MÌN CHỜ NÂNG PHIÊN BẢN, đo 22/08/2026.
+    #
+    # `"start_day"` vốn LÀ giá trị mặc định của `origin`, nên dòng này không điều
+    # khiển gì; nó chỉ TRÔNG như một cần điều khiển lưới nến D1. Nguy hiểm nằm ở
+    # chỗ nó hoạt động khác nhau theo phiên bản pandas:
+    #     pandas 2.3.3 (venv hiện tại)  `origin` CÓ tác dụng với freq "1D"
+    #     pandas 3.0.3 (hệ `quant-xau`) `origin` bị BỎ QUA + `RuntimeWarning`
+    # Nghĩa là code dựa vào `origin` để đổi lưới D1 sẽ chạy đúng hôm nay và ÂM
+    # THẦM đổi hành vi ngay khi nâng pandas — hệ anh em đã ở phiên bản đó.
+    #
+    # Lưới D1 ở đây là NỬA ĐÊM UTC, cố ý, và giờ cả hai nguồn (parquet + MT5) đều
+    # là UTC nên hai bên khớp nhau. Muốn đổi lưới (ví dụ sang ngày MÁY CHỦ) thì
+    # phải DỊCH CHỈ MỤC trước khi gộp rồi dịch nhãn trả lại — cách đó chạy đúng ở
+    # mọi phiên bản. Xem `docs/forex/10_kiem_toan_cheo_mui_gio_2026-08-22.md`.
+    g = (m1.resample(rule, closed="left", label="left") if rule == "1D"
+         else m1.resample(rule, origin="start_day", closed="left", label="left"))
     agg = {"open": "first", "high": "max", "low": "min", "close": "last",
            "spread_usd": "mean"}
     if "volume" in m1.columns:
@@ -235,7 +258,9 @@ def build_bars(m1: pd.DataFrame, timeframe: str) -> pd.DataFrame:
 def daily_bars(symbol: str, start: str | None = None) -> pd.DataFrame:
     """Nến D1 (bao phủ nới) — đơn vị nền của mọi chiến lược thang ngày."""
     m1 = load_m1(symbol)
-    g = m1.resample("1D", origin="start_day")
+    # KHÔNG truyền `origin=` — nó bằng mặc định và đổi hành vi theo phiên bản
+    # pandas (xem `build_bars`). Lưới D1 là nửa đêm UTC, cho cả backtest lẫn live.
+    g = m1.resample("1D")
     agg = {"open": "first", "high": "max", "low": "min", "close": "last",
            "spread_usd": "median"}
     if "volume" in m1.columns:

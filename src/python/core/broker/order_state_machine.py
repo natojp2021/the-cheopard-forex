@@ -456,7 +456,31 @@ class OrderStateMachine:
         key = cls.generate_idempotency_key(strategy, "1.0", symbol, timeframe or "M5",
                                            bar_timestamp, direction, setup_id=setup_id or "main")
         if not cls.claim_idempotency_key(key):
-            log(f"🔑 [STATE_MACHINE] Signal with key {key[:16]} already exists (Duplicate blocked).")
+            # CHẶN TRÙNG LÀ CHUYỆN BÌNH THƯỜNG, KHÔNG PHẢI SỰ KIỆN ĐÁNG IN.
+            #
+            # Đo 07:32:33 ngày 21/08/2026: bảy dòng liên tiếp, mỗi dòng một mã
+            # băm 16 ký tự mà không ai tra được:
+            #
+            #     🔑 Signal with key 38ae009606e67c99 already exists (Duplicate blocked).
+            #     🔑 Signal with key a075f49c19cb05b1 already exists (Duplicate blocked).
+            #     ... (5 dòng nữa)
+            #
+            # Cùng thông tin đó ĐÃ có trên màn hình hai lần nữa, ở dạng người đọc
+            # được: bảng kết quả in `BỎ QUA — trùng khoá chống gửi lặp` kèm TÊN
+            # công cụ và lot, và dòng tổng kết in `10 lệnh gửi · 0 bỏ qua`.
+            #
+            # Nên: sổ JSONL giữ đủ (truy vấn được theo khoá khi cần điều tra),
+            # console không nhận gì. Đây là "sửa từ GỐC ở điểm ghi log" chứ không
+            # phải nén ở tầng hiển thị — bộ nén không giúp được vì mỗi dòng mang
+            # một mã băm khác nhau.
+            try:
+                from src.python.utils import ops_log
+
+                ops_log.emit("trading", "duplicate_signal_blocked", key=key[:16],
+                             strategy=strategy, symbol=symbol,
+                             direction=direction, bar=str(bar_timestamp))
+            except Exception:
+                pass
             return None
 
         # Bản chụp quyết định sẽ được lưu vào khối nội dung sự kiện `ORDER_CREATED` để bảo toàn lịch sử.

@@ -38,6 +38,7 @@ lý. Hàm dưới đây nhân với `point` để trả về ĐƠN VỊ GIÁ, kh
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 import numpy as np
@@ -46,6 +47,177 @@ import pandas as pd
 # Số nến M1 lấy về cho mỗi lần gọi. 200.000 nến M1 ≈ 5 tháng giao dịch — thừa cho
 # cửa sổ dài nhất đang dùng (chân H4 cần 96 nến H4 = 5.760 nến M1) và vẫn nhanh.
 DEFAULT_BARS = 200_000
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MÚI GIỜ: MT5 TRẢ GIỜ MÁY CHỦ, PARQUET LÀ UTC — PHẢI QUY ĐỔI
+#
+# LỖI PHÁT HIỆN 22/08/2026 (kiểm toán chéo từ hệ `quant-xau`)
+# ═══════════════════════════════════════════════════════════════════════════════
+# `load_m1()` làm `pd.to_datetime(rates["time"], unit="s")` rồi trả luôn. Nhưng
+# `rates["time"]` của MT5 mang **giờ MÁY CHỦ** (FTMO/MetaQuotes chạy giờ Đông Âu:
+# UTC+3 mùa hè, UTC+2 mùa đông), trong khi `fx_data._load_m1_parquet` trả **UTC**
+# — và docstring của `fx_data.load_m1` khai cả hai nhánh đều "index UTC naive".
+#
+# Hai nguồn vì thế LỆCH 2-3 GIỜ, và cả module này tồn tại để bảo đảm "hai nguồn
+# cho ra CÙNG một hình dạng dữ liệu — cùng tên cột, cùng đơn vị, cùng múi giờ".
+#
+# HẬU QUẢ ĐO ĐƯỢC, theo thứ tự nghiêm trọng:
+#
+# 1. `cross_mean_reversion` (H1) chặn theo giờ: `EXECUTION_WINDOW_UTC = 10..16`,
+#    `FORBIDDEN_HOURS_UTC = 20..23`, đọc `ts.hour` của chỉ mục nến. Ở backtest `ts`
+#    là UTC nên cửa sổ đúng; ở live `ts` là giờ máy chủ nên cửa sổ THẬT chạy vào
+#    **07-13 UTC** và giờ bị cấm THẬT là **17-20 UTC**. Chân này giao dịch đúng
+#    những giờ mà nghiên cứu đã loại, và bị cấm ở những giờ nó muốn vào.
+# 2. `fx_data.build_bars("4h")` và `fx_data.daily_bars()` gộp theo
+#    `origin="start_day"` trên chỉ mục. Lệch 2-3 giờ ⟹ BIÊN nến H4/D1 lệch ⟹ bốn
+#    chân H4 và ba chân D1 nhìn một chuỗi nến khác hẳn chuỗi backtest đã kiểm định.
+#    (Khung M30/H1 KHÔNG bị: lệch nguyên giờ không đổi lưới 30 phút/1 giờ.)
+# 3. `freshness()` so `pd.Timestamp.utcnow()` với nến cuối. Nến cuối mang giờ máy
+#    chủ nên LỚN HƠN utcnow 2-3 giờ ⟹ tuổi dữ liệu ra ÂM ⟹ cổng chặn dữ liệu ôi
+#    không bao giờ kích hoạt cho tới khi dữ liệu đã cũ hơn 2-3 giờ. Đúng lớp bảo
+#    vệ mà module này được viết ra để dựng.
+#
+# Máy chủ có DST nên offset KHÔNG phải hằng số: mọi cách vá bằng một con số cứng
+# sẽ đúng nửa năm và sai nửa năm còn lại.
+SERVER_DST_OFFSET_H = 3      # EEST — chủ nhật cuối tháng 3 -> chủ nhật cuối tháng 10
+SERVER_STD_OFFSET_H = 2      # EET  — phần còn lại của năm
+
+# Ngưỡng tin cậy khi ĐO offset bằng tick. Ngoài dải này thì tick đã cũ (cuối tuần,
+# terminal mất kết nối) và phép trừ không còn đo múi giờ nữa — rơi về lịch DST.
+_OFFSET_MEASURE_MAX_H = 6.5
+_OFFSET_CACHE_TTL_S = 1800.0
+_offset_cache: Dict[str, tuple] = {}
+
+
+def _last_sunday(year: int, month: int) -> datetime:
+    """Chủ nhật cuối cùng của tháng — mốc chuyển giờ châu Âu."""
+    d = datetime(year, month, 31, tzinfo=timezone.utc)
+    while d.month != month:
+        d = d.replace(day=d.day - 1)
+    return d - pd.Timedelta(days=(d.weekday() + 1) % 7).to_pytimedelta()
+
+
+def dst_calendar_offset_hours(now_utc: Optional[datetime] = None) -> int:
+    """Offset giờ máy chủ theo LỊCH giờ Đông Âu — phương án dự phòng khi không đo được.
+
+    EEST (UTC+3) từ 01:00 UTC chủ nhật cuối tháng 3 tới 01:00 UTC chủ nhật cuối
+    tháng 10; còn lại EET (UTC+2).
+    """
+    t = now_utc or datetime.now(timezone.utc)
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    start = _last_sunday(t.year, 3) + pd.Timedelta(hours=1).to_pytimedelta()
+    end = _last_sunday(t.year, 10) + pd.Timedelta(hours=1).to_pytimedelta()
+    return SERVER_DST_OFFSET_H if start <= t < end else SERVER_STD_OFFSET_H
+
+
+def server_offset_hours(mt5, symbol: str, now_utc: Optional[datetime] = None) -> int:
+    """Chênh lệch GIỜ MÁY CHỦ − UTC, tính bằng giờ nguyên.
+
+    ĐO trước, LỊCH sau. Đo bằng `symbol_info_tick().time` là cách duy nhất đúng cho
+    MỌI broker (không phải broker nào cũng chạy giờ Đông Âu); lịch DST chỉ là lưới
+    an toàn cho lúc tick không dùng được — cuối tuần, terminal chưa kết nối, hoặc
+    symbol chưa vào Market Watch.
+
+    Cache 30 phút cho mỗi symbol: hàm này bị gọi mỗi chu kỳ × mỗi công cụ, còn
+    offset thì chỉ đổi hai lần mỗi năm. Cache có TTL chứ không vĩnh viễn, vì một
+    tiến trình live chạy liên tục qua mốc chuyển giờ phải tự nhận ra.
+    """
+    import time as _time
+
+    t_now = now_utc or datetime.now(timezone.utc)
+    if t_now.tzinfo is None:
+        t_now = t_now.replace(tzinfo=timezone.utc)
+    cached = _offset_cache.get(symbol)
+    if cached is not None and (_time.time() - cached[1]) < _OFFSET_CACHE_TTL_S:
+        return int(cached[0])
+
+    off = dst_calendar_offset_hours(t_now)
+    try:
+        tick = mt5.symbol_info_tick(symbol)
+        epoch = int(getattr(tick, "time", 0) or 0)
+        if epoch > 0:
+            # `tick.time` là epoch nhưng ĐÃ mang giờ máy chủ (xem
+            # `core/infra/broker_time.py`), nên `utcfromtimestamp` cho đúng giờ
+            # trên chart MT5 — không chuyển múi giờ thêm lần nữa.
+            srv_wall = datetime.fromtimestamp(epoch, tz=timezone.utc)
+            diff_h = (srv_wall - t_now).total_seconds() / 3600.0
+            if abs(diff_h) <= _OFFSET_MEASURE_MAX_H:
+                off = int(round(diff_h))
+    except Exception:
+        pass
+    _offset_cache[symbol] = (off, _time.time())
+    return int(off)
+
+
+def reset_offset_cache() -> None:
+    """Xoá cache offset — gọi ở đầu mỗi lượt backtest/test để không rò rỉ giữa các lượt."""
+    _offset_cache.clear()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SỔ TUỔI DỮ LIỆU — nguyên liệu cho cổng chặn dữ liệu ôi
+# ═══════════════════════════════════════════════════════════════════════════════
+# `freshness()` dưới đây tồn tại từ 15/08/2026 và hai docstring trong `fx_data.py`
+# khai rằng cổng chặn dữ liệu ôi nằm ở `engine._build_plan`. Rà 22/08/2026:
+# `grep -rn "freshness("` toàn repo chỉ thấy ĐÚNG định nghĩa hàm và hai dòng
+# docstring đó — **lớp bảo vệ được mô tả chưa bao giờ tồn tại**. Đúng họ lỗi tệ
+# nhất: một cổng an toàn chỉ có trên giấy, mà người đọc tài liệu lại tin là có.
+#
+# Vấn đề khi wire nó vào: `freshness()` nhận một DataFrame, còn `_build_plan` không
+# giữ DataFrame nào — nến được nạp sâu bên trong `portfolio.live_targets()` cho 27
+# chân. Gọi lại `load_m1` cho 27 công cụ chỉ để đo tuổi là 27 × 200.000 nến, tức
+# trả giá bằng cả chu kỳ.
+#
+# Nên: GHI SỔ ngay tại chỗ nến vừa được nạp (không thêm một lần đọc nào), rồi
+# `_build_plan` chỉ đọc sổ. `fx_data.load_m1()` gọi `note_bars()` cho CẢ HAI nhánh
+# — MT5 và parquet — vì nhánh parquet chính là tình huống nguy hiểm nhất: nó trả
+# một DataFrame hoàn toàn hợp lệ của tháng trước.
+_LAST_BAR_UTC: Dict[str, pd.Timestamp] = {}
+
+# Ngưỡng chặn: nến mới nhất cũ hơn mức này thì KHÔNG mở/tăng phơi nhiễm.
+#
+# Chọn 2 giờ, không chặt hơn, vì hai lý do đo được:
+#   · Bình thường nến M1 về mỗi phút; ngay cả cross mỏng (AUDCAD, NZDCAD) cũng
+#     không đứng 2 giờ không tick trong giờ giao dịch. Ngưỡng chặt hơn sẽ chặn oan.
+#   · Sự cố mà cổng này sinh ra để bắt được đo ở mức **28 NGÀY** (15/08/2026,
+#     parquet cũ 28 ngày trên VPS). 2 giờ bắt được nó với biên 300 lần.
+# Thị trường đóng cửa thì tuổi vượt ngưỡng và cổng chặn entry — đúng hành vi muốn
+# có, và vô hại vì lúc đó không có gì để vào.
+STALE_MAX_AGE_H = 2.0
+
+
+def note_bars(symbol: str, df: Optional[pd.DataFrame]) -> None:
+    """Ghi lại nhãn nến MỚI NHẤT vừa nạp cho `symbol`. Không tốn thêm lần đọc nào."""
+    if df is None or len(df) == 0:
+        return
+    try:
+        last = pd.Timestamp(df.index.max())
+        if last.tzinfo is not None:
+            last = last.tz_localize(None)
+        _LAST_BAR_UTC[symbol] = last
+    except Exception:
+        return
+
+
+def staleness(now: Optional[pd.Timestamp] = None) -> Dict[str, float]:
+    """Tuổi (GIỜ) của nến mới nhất từng nạp, theo từng công cụ."""
+    t = pd.Timestamp(now) if now is not None else pd.Timestamp.utcnow()
+    if t.tzinfo is not None:
+        t = t.tz_localize(None)
+    return {sym: float((t - last).total_seconds() / 3600.0)
+            for sym, last in _LAST_BAR_UTC.items()}
+
+
+def stale_symbols(max_age_h: float = STALE_MAX_AGE_H,
+                  now: Optional[pd.Timestamp] = None) -> Dict[str, float]:
+    """Công cụ có dữ liệu ÔI hơn `max_age_h` — rỗng nghĩa là mọi thứ đều tươi."""
+    return {s: age for s, age in staleness(now).items() if age > float(max_age_h)}
+
+
+def reset_staleness() -> None:
+    """Xoá sổ tuổi dữ liệu — gọi đầu mỗi lượt backtest/test."""
+    _LAST_BAR_UTC.clear()
 
 # BẬC GIẢM DẦN số nến khi terminal không trả nổi mức đang xin.
 #
@@ -290,7 +462,12 @@ def load_m1(symbol: str, mt5=None, *, n_bars: int = DEFAULT_BARS
         return None
 
     df = pd.DataFrame(raw)
-    df["time"] = pd.to_datetime(df["time"], unit="s")
+    # QUY VỀ UTC. `rates["time"]` mang giờ MÁY CHỦ; parquet là UTC; và cả module này
+    # tồn tại để hai nguồn thay thế được cho nhau. Xem khối "MÚI GIỜ" đầu file cho
+    # ba hậu quả đo được của việc bỏ dòng này (cửa sổ giờ của `cross_mean_reversion`
+    # lệch 3 giờ, biên nến H4/D1 lệch, cổng dữ liệu ôi không bao giờ kích hoạt).
+    off_h = server_offset_hours(mt5, symbol)
+    df["time"] = pd.to_datetime(df["time"].astype("int64") - off_h * 3600, unit="s")
     df = df.set_index("time").sort_index()
     df = df[~df.index.duplicated(keep="last")]
 
@@ -317,18 +494,165 @@ def load_m1(symbol: str, mt5=None, *, n_bars: int = DEFAULT_BARS
     if "spread" in df.columns:
         sp = df["spread"].astype(float) * point
         if float(sp.median()) <= 0:
-            from src.python.utils.logger import log_error
-            log_error(f"MT5 trả spread = 0 cho {symbol} trên nến lịch sử — đặt NaN "
-                      f"để phép tính chi phí NỔ thay vì âm thầm coi phí bằng 0. "
-                      f"Dùng số đo từ scripts/log_cross_spread.py.")
-            df["spread_usd"] = np.nan
+            df["spread_usd"] = _live_spread_fallback(symbol, point, len(df))
         else:
             df["spread_usd"] = sp
     else:
-        df["spread_usd"] = np.nan
+        df["spread_usd"] = _live_spread_fallback(symbol, point, len(df))
 
     df["volume"] = df.get("tick_volume", pd.Series(index=df.index, dtype=float))
     return df[["open", "high", "low", "close", "spread_usd", "volume"]]
+
+
+# Spread ĐO ĐƯỢC gần nhất theo công cụ, dùng khi `symbol_info().spread` chớp về 0.
+# Chỉ chứa số đã ĐO — không có giá trị mặc định nào được nạp sẵn vào đây, vì một
+# hằng số bịa ra chính là thứ cả module này tồn tại để ngăn.
+_LAST_GOOD_SPREAD: Dict[str, float] = {}
+
+# Lần cuối đã NÓI về spread thay thế của từng công cụ, theo `time.time()`.
+#
+# Hàm này được gọi mỗi lần nạp nến, tức nhiều lần mỗi giây khi 27 chân cùng dựng
+# kế hoạch. Đo 19:14 ngày 20/08/2026: dòng `[SPREAD] EURUSD ...` chiếm 14 trong 15
+# dòng cuối của nhật ký và đẩy mọi dòng có ích ra ngoài màn hình — đúng họ lỗi mà
+# CLAUDE.md gọi là "sửa từ GỐC ở điểm ghi log". Trạng thái ổn định thì nói MỘT LẦN
+# mỗi 30 phút; đổi trạng thái thì nói NGAY.
+#
+# CHỈ CÓ HAI TRẠNG THÁI, và ranh giới nằm ĐÚNG chỗ này: `measured` (còn số đo, dù
+# là spread sống hay số nhớ lần trước) và `nan` (mất hẳn nguồn đo). Bản đầu tách
+# `live` với `cached` thành hai trạng thái riêng, và vì spread sống của EURUSD
+# chớp 1/0 liên tục nên hai trạng thái đó ĐỔI QUA LẠI mỗi lần gọi — mỗi lần đổi
+# lại "nói NGAY", tức bộ nén không nén được gì. Đo 19:20 ngày 20/08/2026: vẫn 2
+# dòng mỗi giây sau khi đã thêm throttle.
+#
+# Bài học chung: nén theo trạng thái chỉ có tác dụng khi trạng thái ổn định hơn
+# sự kiện. Chia trạng thái quá mịn thì chính nó thành nguồn nhiễu.
+_SPREAD_LOG_AT: Dict[str, float] = {}
+_SPREAD_LOG_KIND: Dict[str, str] = {}
+_SPREAD_LOG_EVERY = 1800.0
+
+
+def _say_once(symbol: str, kind: str, msg: str, *, level: str = "error") -> None:
+    """Ghi `msg` nếu trạng thái ĐỔI, hoặc đã quá `_SPREAD_LOG_EVERY` giây.
+
+    MỨC LOG PHẢI KHỚP Ý NGHĨA — sửa 21/08/2026
+    ===========================================
+    Bản đầu ghi MỌI nhánh ở mức ERROR, kể cả nhánh nói rằng mọi thứ đã được xử
+    lý đúng ("dùng spread SỐNG", "dùng số ĐO GẦN NHẤT"). Hai hệ quả, và cái thứ
+    hai nặng hơn:
+
+      * Bộ soát log theo giờ đếm nó là LỖI MỚI mỗi lần câu chữ đổi.
+      * Người vận hành học được rằng dòng ERROR ở đây thường vô hại — và đó
+        chính là cách một dòng ERROR THẬT bị lướt qua.
+
+    Chỉ nhánh cuối (không đo được gì, công cụ rụng khỏi rổ) mới là ERROR: lúc đó
+    hệ thật sự mất một công cụ.
+    """
+    import time
+
+    from src.python.utils import logger as _lg
+
+    now = time.time()
+    changed = _SPREAD_LOG_KIND.get(symbol) != kind
+    if changed or now - _SPREAD_LOG_AT.get(symbol, 0.0) >= _SPREAD_LOG_EVERY:
+        _SPREAD_LOG_KIND[symbol] = kind
+        _SPREAD_LOG_AT[symbol] = now
+        (_lg.log_error if level == "error" else _lg.log)(msg)
+
+
+def _live_spread_fallback(symbol: str, point: float, n_bars: int):
+    """Spread thay thế khi cột spread của nến LỊCH SỬ không dùng được.
+
+    VÌ SAO KHÔNG TRẢ `np.nan` NHƯ BẢN CŨ — SỰ CỐ 20/08/2026
+    =======================================================
+    Ý định của bản cũ đúng: chi phí bằng 0 là dối trá nguy hiểm hơn chi phí bị
+    thiếu, nên "để NaN cho phép tính NỔ" thay vì âm thầm coi phí bằng 0.
+
+    Nhưng NaN không nổ ở chỗ ai cũng thấy. Nó đi thẳng vào
+    `fx_data.build_bars`, nơi có `dropna(subset=[..., "spread_usd"])` — và XOÁ
+    SẠCH mọi nến của công cụ đó. Đo lúc 18:53 ngày 20/08/2026:
+
+        EURUSD   m1 = 200.000 nến   ->   H1 = 0 nến
+
+    EURUSD nằm trong `FX_ALL`, mà `build_crosses` gộp 7 cặp USD bằng
+    `DataFrame(px).dropna()`. Một cột rỗng làm giao của mọi cột thành RỖNG: cả
+    20 cross mất sạch dữ liệu, `evaluate_cross` gọi `idx[-1]` trên chỉ mục rỗng
+    và ném `IndexError`, `_build_plan` hỏng — nên **cả 27 chân không vào được
+    lệnh nào**, mỗi chu kỳ, im lặng, trong khi nhịp tim vẫn báo "MT5 OK".
+
+    Một công cụ có dữ liệu spread kém đã hạ toàn bộ danh mục.
+
+    ĐƯỜNG RA ĐÚNG: KHÔNG PHẢI 0, VÀ CŨNG KHÔNG PHẢI NaN
+    ====================================================
+    `symbol_info(symbol).spread` là spread THẬT tại thời điểm hỏi — cùng con số
+    mà `engine._log_spread_survey` đã đối chiếu với bảng ước lượng mỗi 30 phút.
+    Nó là một PHÉP ĐO, không phải giả định, nên dùng nó không vi phạm nguyên tắc
+    "không bịa chi phí bằng 0".
+
+    Điều nó KHÔNG làm được: nó là một con số cho mọi nến, nên biến động spread
+    theo phiên biến mất. Vì thế nó chỉ hợp cho đường LIVE (nơi lệnh khớp ở
+    spread HIỆN TẠI, không phải spread của tháng trước). Backtest vẫn đọc parquet
+    — `fx_data.load_m1` từ chối cờ `FX_BARS_FROM_MT5` trong khối backtest — nên
+    số liệu kiểm định không bị con số này chạm vào.
+
+    Hết đường đo thì mới trả NaN: lúc đó đúng là KHÔNG BIẾT chi phí, và mất công
+    cụ còn hơn giao dịch mù.
+    """
+    # ĐỌC NHIỀU LẦN, LẤY LẦN NÀO RA SỐ.
+    #
+    # `symbol_info(EURUSD).spread` trên feed demo này chớp 1 → 0 → 3 → 0 trong
+    # vòng vài giây. Đọc đúng MỘT lần rồi kết luận "không đo được" là kết luận
+    # dựa trên một mẫu duy nhất của một đại lượng nhiễu — và cái giá của kết
+    # luận sai là mất cả công cụ, kéo theo rổ 20 cross và cả 27 chân.
+    #
+    # Năm lần đọc cách nhau 0,1 giây tốn nửa giây mỗi lần nạp nến, và chỉ chạy ở
+    # nhánh spread lịch sử đã hỏng.
+    pts = 0.0
+    try:
+        import time as _time
+
+        import MetaTrader5 as mt5
+
+        for attempt in range(5):
+            info = mt5.symbol_info(symbol)
+            got = float(getattr(info, "spread", 0) or 0) if info is not None else 0.0
+            if got > 0:
+                pts = got
+                break
+            if attempt < 4:
+                _time.sleep(0.1)
+    except Exception:
+        pts = 0.0
+
+    if pts > 0:
+        val = pts * point
+        _LAST_GOOD_SPREAD[symbol] = val
+        _say_once(symbol, "measured", level="info", msg=
+                  f"[SPREAD] {symbol}: cột spread của nến lịch sử = 0 trên "
+                  f"{n_bars} nến — dùng spread SỐNG {pts:.0f} điểm = {val:.6f} "
+                  f"đơn vị giá cho mọi nến. Đây là phép ĐO, không phải 0 bịa ra; "
+                  f"nhưng nó phẳng theo phiên nên chỉ dùng cho LIVE.")
+        return val
+
+    # SPREAD SỐNG CŨNG BẰNG 0: giữ số ĐO GẦN NHẤT thay vì làm rụng công cụ.
+    #
+    # Đo 20/08/2026 trên chính tài khoản demo này: `symbol_info("EURUSD").spread`
+    # trả 0 rồi 1 rồi 0 trong vòng vài giây. Không nhớ số cũ thì EURUSD rụng khỏi
+    # rổ ở chu kỳ này và quay lại ở chu kỳ sau — rổ 20 cross đổi thành phần theo
+    # nhịp ngẫu nhiên, tức chiến lược chạy trên một vũ trụ không xác định. Đó là
+    # thứ tệ hơn cả hai lựa chọn ban đầu.
+    cached = _LAST_GOOD_SPREAD.get(symbol)
+    if cached is not None:
+        _say_once(symbol, "measured", level="info", msg=
+                  f"[SPREAD] {symbol}: spread sống trả 0 — dùng số ĐO GẦN NHẤT "
+                  f"{cached:.6f} đơn vị giá. Giữ công cụ trong rổ để vũ trụ giao "
+                  f"dịch không đổi theo từng chu kỳ.")
+        return cached
+
+    _say_once(symbol, "nan",
+              f"[SPREAD] {symbol}: KHÔNG đo được spread — nến lịch sử, spread "
+              f"sống và bộ nhớ đo gần nhất đều trống. Trả NaN: công cụ này sẽ "
+              f"rụng khỏi rổ, và đó là kết quả ĐÚNG khi không biết chi phí.")
+    return np.nan
 
 
 def freshness(df: pd.DataFrame, now: Optional[pd.Timestamp] = None) -> float:

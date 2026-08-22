@@ -23,9 +23,44 @@ from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from src.python.utils.logger import log, log_error
+
+
+# ─────────────────────────────────────────── thư bị nuốt ở môi trường DEV
+_DEV_MAIL: Dict[str, Any] = {"n": 0, "last_print": 0.0, "sample": ""}
+_DEV_MAIL_EVERY = 300.0
+
+
+def _dev_mail_swallowed(subject: str) -> None:
+    """Đếm thư bị nuốt ở DEV, in GỘP thay vì một dòng mỗi thư.
+
+    Đo 07:32:43 ngày 21/08/2026: mười dòng liên tiếp, mỗi dòng một tiêu đề thư,
+    chiếm trọn màn hình ngay sau khi lượt gửi lệnh kết thúc:
+
+        email KHÔNG gửi (APP_ENV != PROD) — nội dung: 🔔 [...] BUY ... — AUDJPY (Lot 0.02)
+        email KHÔNG gửi (APP_ENV != PROD) — nội dung: 🔔 [...] SELL ... — CADCHF (Lot 0.02)
+        ... (8 dòng nữa)
+
+    Mỗi dòng nói đúng một điều đã biết từ trước khi bot khởi động: `APP_ENV`
+    không phải PROD nên KHÔNG thư nào được gửi. Đó là CẤU HÌNH, không phải sự
+    kiện — mà nội dung thư thì đã nằm nguyên trong bảng kết quả lệnh ngay phía
+    trên, đầy đủ hơn (giá, spread, SL, retcode).
+
+    Nên: đếm và nói MỘT lần mỗi 5 phút, kèm một tiêu đề mẫu để biết loại thư nào
+    đang bị nuốt.
+    """
+    import time
+
+    _DEV_MAIL["n"] += 1
+    _DEV_MAIL["sample"] = subject
+    now = time.time()
+    if now - float(_DEV_MAIL["last_print"]) >= _DEV_MAIL_EVERY:
+        n = int(_DEV_MAIL["n"])
+        _DEV_MAIL["n"] = 0
+        _DEV_MAIL["last_print"] = now
+        log(f"email DEV: {n} thư KHÔNG gửi (APP_ENV != PROD) — ví dụ: {subject}")
 
 
 def _config() -> dict:
@@ -81,7 +116,7 @@ def send(subject: str, body_text: str, body_html: Optional[str] = None,
         log(f"email BỎ QUA (chưa cấu hình SMTP trong .env): {subject}")
         return False
     if not IS_PROD:
-        log(f"email KHÔNG gửi (APP_ENV != PROD) — nội dung: {subject}")
+        _dev_mail_swallowed(subject)
         return False
 
     try:

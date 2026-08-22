@@ -376,6 +376,42 @@ class OpsConsole:
         if self._structured:
             ops_log.emit("strategy", "matrix_snapshot", rows=rows)
 
+    # Nhịp tim IM khi không có gì đổi, tối đa bao lâu thì vẫn phải kêu một tiếng.
+    #
+    # ĐO 21/08/2026: nhịp 45 giây in 80 dòng mỗi giờ, và trong một mẫu 11 phút
+    # thì 16/16 dòng giống hệt nhau trừ vài chữ số equity:
+    #
+    #     07:41:05 NHỊP MT5 OK · eq $100,199.05 · pnl $206.49 · dd 0.00% · pos 40 ...
+    #     07:41:50 NHỊP MT5 OK · eq $100,196.48 · pnl $203.92 · dd 0.00% · pos 40 ...
+    #     07:42:35 NHỊP MT5 OK · eq $100,192.17 · pnl $199.61 · dd 0.00% · pos 40 ...
+    #
+    # Ba dòng đó nói đúng MỘT điều: "vẫn sống, không có gì đổi". Nói điều đó 80
+    # lần mỗi giờ thì mọi dòng CÓ ích bị đẩy khỏi màn hình — đúng họ lỗi mà
+    # CLAUDE.md gọi là "sửa từ GỐC ở điểm ghi log".
+    #
+    # Bộ nén `_Squelch` không cứu được vì nó so dấu vân tay SAU KHI xoá chữ số,
+    # mà nhịp tim vốn được miễn nén (nó là bằng chứng còn sống).
+    #
+    # Nên: sổ JSONL vẫn nhận ĐỦ 45 giây một bản ghi — không mất số liệu nào.
+    # Console chỉ nhận dòng khi trạng thái VẬT CHẤT đổi, hoặc khi đã im quá lâu.
+    HEARTBEAT_QUIET_SECONDS = 900.0
+
+    def _heartbeat_fingerprint(self, mt5_ok, pos, regime, halted, spread_over,
+                               active, live, dd_pct) -> tuple:
+        """Những gì ĐỔI thì đáng nói; equity nhích vài đô thì không.
+
+        `dd_pct` làm tròn về bậc 0,1 điểm phần trăm và VẪN nằm trong dấu vân tay:
+        nhịp tim này mang khoảng cách tới hạn mức FTMO, và một con số rủi ro đang
+        dịch chuyển là thứ phải nói ngay — khác hẳn equity dao động quanh chỗ cũ.
+        """
+        try:
+            dd_bucket = round(float(dd_pct or 0.0), 1)
+        except (TypeError, ValueError):
+            dd_bucket = None
+        return (bool(mt5_ok), int(pos), str(regime), bool(halted),
+                int(spread_over), int(active), int(live),
+                bool(self._state.get("market_closed")), dd_bucket)
+
     def heartbeat(self) -> None:
         """MỘT dòng trả lời cả năm câu hỏi. Xem docstring đầu file."""
         self._last_heartbeat = time.time()
@@ -411,8 +447,19 @@ class OpsConsole:
         if self._suppressed:
             parts.append(f"[{T.C_TEXT_DIM}]{self._suppressed} dòng đã nén[/]")
 
-        self._print(f"[{T.C_TEXT_DIM}]{datetime.now():%H:%M:%S}[/] "
-                    f"[{T.C_BLUE}]{'NHỊP':<8}[/] " + " · ".join(parts))
+        fp = self._heartbeat_fingerprint(mt5_ok, pos, regime, halted,
+                                         spread_over, active, live,
+                                         g.get("dd_pct"))
+        now = time.time()
+        quiet_for = now - getattr(self, "_last_heartbeat_print", 0.0)
+        changed = fp != getattr(self, "_last_heartbeat_fp", None)
+        if changed or quiet_for >= self.HEARTBEAT_QUIET_SECONDS:
+            if not changed:
+                parts.append(f"[{T.C_TEXT_DIM}]không đổi {int(quiet_for // 60)}'[/]")
+            self._last_heartbeat_fp = fp
+            self._last_heartbeat_print = now
+            self._print(f"[{T.C_TEXT_DIM}]{datetime.now():%H:%M:%S}[/] "
+                        f"[{T.C_BLUE}]{'NHỊP':<8}[/] " + " · ".join(parts))
         if self._structured:
             ops_log.emit("system", "heartbeat", mt5=mt5_ok, equity=s.get("equity"),
                          daily_pnl=pnl, dd_pct=g.get("dd_pct"), positions=pos,

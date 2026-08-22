@@ -197,6 +197,24 @@ def build_crosses(timeframe: str = "H1", start: str = "2020-01-01"
         px[sym] = b[b.index >= start]["close"]
     base = pd.DataFrame(px).dropna()
 
+    # NÓI TÊN CÔNG CỤ ĐÃ LÀM RỖNG RỔ. Không có dòng này thì rổ 20 cross trả về
+    # một khung (0, 20) hoàn toàn hợp lệ về kiểu, và lỗi chỉ lộ ra ở tận
+    # `evaluate_cross` dưới dạng `IndexError: index -1 ... size 0` — không tệp,
+    # không tên công cụ. Ngày 20/08/2026 mất khoảng một giờ chỉ để lần ra rằng
+    # thủ phạm là EURUSD (200.000 nến M1, 0 nến H1, vì spread NaN).
+    #
+    # `dropna()` lấy GIAO của 7 cột, nên MỘT cột rỗng là đủ xoá tất cả.
+    if base.empty:
+        empty = [s for s in px if len(px[s]) == 0]
+        short = {s: len(px[s]) for s in px if 0 < len(px[s])}
+        from src.python.utils.logger import log_error
+
+        log_error(
+            f"[CROSS] rổ {timeframe} RỖNG sau khi giao 7 cặp USD. "
+            f"Công cụ KHÔNG có nến nào: {empty or 'không có'}. "
+            f"Số nến từng cặp: {short}. "
+            f"Mọi chân cross sẽ đứng ngoài cho tới khi công cụ đó có dữ liệu.")
+
     out, specs = {}, {}
     for name, a, b, how in CROSS_DEFS:
         if a not in base.columns or b not in base.columns:

@@ -127,11 +127,31 @@ def test_position_closed_elsewhere_is_removed(book):
 
 
 def test_lot_mismatch_is_flagged(book):
-    """Khớp một phần → sổ và broker lệch → phải hiện ra, không tự sửa."""
+    """Lệch lot phải HIỆN RA — nhưng từ 21/08/2026 nó không khoá cả danh mục nữa.
+
+    Chủ ý ban đầu là "hiện ra, KHÔNG tự sửa". Đo được cái giá của phần "không tự
+    sửa": sổ ghi NZDCAD −1.0 còn broker giữ −0.81 sau một lần đóng bớt ngoài hệ;
+    `ok` đòi `lot_mismatch` rỗng nên 0.19 lot lệch trên MỘT công cụ chặn toàn bộ
+    lệnh mới của 27 công cụ, liên tục từ 14:08 tới 21:00 — không một lệnh nào
+    trong hai ngày.
+
+    Nên phần "hiện ra" giữ nguyên (`healed_lots` + `explain()`), phần "không tự
+    sửa" đổi thành: cân theo broker khi lot GIẢM, vẫn báo lỗi khi lot TĂNG. Đường
+    cũ vẫn kiểm được qua `auto_heal_lots=False`.
+    """
     book.open("zb_audcad_h1", symbol="AUDCAD", side="BUY", lots=1.5,
               entry_bar_utc="2026-08-10 09:00:00", entry_price=0.9, timeframe="H1")
-    r = book.reconcile([_Pos("AUDCAD", 0.5, 0)])
+    r = book.reconcile([_Pos("AUDCAD", 0.5, 0)], auto_heal_lots=False)
     assert not r.ok and "AUDCAD" in r.lot_mismatch
+
+
+def test_broker_holding_more_than_the_book_is_never_healed(book):
+    """Phơi nhiễm NHIỀU hơn sổ là bất thường thật — đóng bớt không làm lot tăng."""
+    book.open("zb_audcad_h1", symbol="AUDCAD", side="BUY", lots=0.5,
+              entry_bar_utc="2026-08-10 09:00:00", entry_price=0.9, timeframe="H1")
+    r = book.reconcile([_Pos("AUDCAD", 1.5, 0)])
+    assert not r.ok and "AUDCAD" in r.lot_mismatch
+    assert r.healed_lots == {}
 
 
 # ═════════════════════════════════════════════════════ 4. công tắc thủ công

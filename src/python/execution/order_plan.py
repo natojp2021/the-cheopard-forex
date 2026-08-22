@@ -47,6 +47,7 @@ from src.python.execution import portfolio_risk as PR
 from src.python.execution import portfolio_sizing as PS
 from src.python.execution.entry_gate import EntryGate, GateResult
 from src.python.execution.position_book import PositionBook
+from src.python.core.infra import symbol_spec as SS
 from src.python.shared import asset_profile as AP
 
 # Chênh lệch lot nhỏ hơn ngần này thì KHÔNG gửi lệnh. Mỗi lệnh trả một lượt spread
@@ -113,14 +114,43 @@ class OrderPlan:
         return "\n".join(lines + [f"  ghi chú: {n}" for n in self.notes])
 
 
-def _classify(current: float, target: float) -> str:
+def min_trade_lots(symbol: str, mt5_module=None) -> float:
+    """Lot NHỎ NHẤT broker chịu nhận cho `symbol`. KHÔNG phải hằng số toàn cục.
+
+    LỖI 04:28 NGÀY 21/08/2026 — MỘT CÔNG CỤ CÁ BIỆT LÀM HỎNG CẢ LƯỢT GỬI
+    ====================================================================
+        [LỖI] NZDCAD  INCREASE  SELL  0.02 lot ... retcode 10014 Invalid volume
+        [CIRCUIT BREAKER OPEN] FATAL NON-RETRIABLE ERROR: retcode=10014
+
+    Đo trên chính tài khoản: `NZDCAD.volume_min = 0.1`, trong khi 26 công cụ còn
+    lại là 0,01. `MIN_TRADE_LOTS = 0.01` là hằng số TOÀN CỤC, nên chênh lệch 0,02
+    lot của NZDCAD qua được cổng nội bộ rồi bị broker từ chối.
+
+    Hậu quả không dừng ở một lệnh hỏng: `10014` bị xếp vào nhóm lỗi CHẾT NGƯỜI
+    không được thử lại, nên nó mở CẦU CHÌ và chặn nốt những lệnh còn lại trong
+    cùng lượt. Một công cụ có bậc lot khác thường làm đứng cả danh mục, lặp lại
+    mỗi chu kỳ.
+
+    Ngưỡng đúng là `max(volume_min, volume_step)`: dưới `volume_min` broker từ
+    chối, và dưới `volume_step` thì làm tròn về 0.
+    """
+    try:
+        spec = SS.resolve(symbol, mt5_module=mt5_module)
+        return max(float(spec.volume_min), float(spec.volume_step))
+    except Exception:
+        # Không đọc được đặc tả thì dùng ngưỡng CŨ. Đoán cao hơn sẽ bỏ lỡ lệnh
+        # thật; đoán thấp hơn chỉ lặp lại đúng lỗi này.
+        return MIN_TRADE_LOTS
+
+
+def _classify(current: float, target: float, min_lots: float = MIN_TRADE_LOTS) -> str:
     """Đặt tên cho việc phải làm. Tên phải phân biệt được ĐẢO CHIỀU với TĂNG THÊM.
 
     Đảo chiều là hai lệnh (đóng rồi mở ngược) chứ không phải một, và nếu gọi nhầm nó
     là "tăng thêm" thì tầng bridge sẽ gửi một lệnh sai chiều với khối lượng sai.
     """
     if abs(target) < 1e-9:
-        return "CLOSE" if abs(current) >= MIN_TRADE_LOTS else "HOLD"
+        return "CLOSE" if abs(current) >= min_lots else "HOLD"
     if abs(current) < 1e-9:
         return "OPEN"
     if current * target < 0:
@@ -139,7 +169,8 @@ def build(targets, *, equity_usd: float, prices: Dict[str, float],
           ftmo_entries_allowed: Optional[bool] = None,
           ftmo_reason: str = "",
           atr_daily_pct: Optional[Dict[str, float]] = None,
-          leverage_override: Optional[float] = None) -> OrderPlan:
+          leverage_override: Optional[float] = None,
+          extra_blocks: Optional[List[str]] = None) -> OrderPlan:
     """Dựng kế hoạch cho chu kỳ hiện tại. KHÔNG gửi lệnh.
 
     `targets` là `PortfolioTargets` từ `portfolio.live_targets()`.
@@ -156,6 +187,10 @@ def build(targets, *, equity_usd: float, prices: Dict[str, float],
 
     `mt5=None` thì bỏ qua bước đọc vị thế thật và coi sổ đang trống — chỉ dùng để
     xem trước kế hoạch.
+
+    `extra_blocks` là danh sách lý do chặn mà BÊN GỌI đã phát hiện, gộp thẳng vào
+    cổng an toàn. Mặc định rỗng để mọi script gọi hàm này không đổi hành vi; đường
+    LIVE (`engine._build_plan`) truyền vào lý do "dữ liệu ôi".
     """
     from src.python.strategies import portfolio as PF
 
@@ -182,15 +217,32 @@ def build(targets, *, equity_usd: float, prices: Dict[str, float],
         notes.append(risk.explain().splitlines()[0])
 
         if book is not None:
-            rec = book.reconcile(mt5.positions_get() or [])
-            notes.append(rec.explain().splitlines()[0])
-            if reconciliation_done is None:
-                reconciliation_done = rec.ok
-            if not rec.ok:
-                notes.extend(rec.explain().splitlines()[1:])
+            from src.python.execution.order_router import MAGIC_BASE
+
+            # Xem ghi chú cùng nội dung ở `engine._reconcile_on_start()`: `or []`
+            # ở đây MỞ cổng lệnh đúng lúc không đọc được tài khoản, và thiếu
+            # `own_magic_base` làm mọi vị thế của chân xếp hạng thành mồ côi.
+            raw = mt5.positions_get()
+            if raw is None:
+                notes.append("KHÔNG đọc được vị thế broker (positions_get trả "
+                             "None) — đối soát bỏ qua, cổng giữ fail-closed")
+                reconciliation_done = False
+                rec = None
+            else:
+                rec = book.reconcile(raw, own_magic_base=MAGIC_BASE)
+                notes.append(rec.explain().splitlines()[0])
+            if rec is not None:
+                if reconciliation_done is None:
+                    reconciliation_done = rec.ok
+                if not rec.ok:
+                    notes.extend(rec.explain().splitlines()[1:])
             # Chiều đang giữ của từng CHÂN lấy từ sổ, không suy từ vị thế broker:
             # một công cụ có thể do nhiều chân cùng giữ (AUDCAD có ba chân), nên
             # vị thế theo công cụ KHÔNG quy ngược ra được chiều của từng chân.
+            #
+            # Chạy KỂ CẢ khi đối soát bỏ qua: `positions` để None sẽ làm các phép
+            # tính phía dưới mất đầu vào. Cổng đã fail-closed nên không có lệnh
+            # nào ra, nhưng bản kế hoạch vẫn phải mô tả đúng trạng thái đang giữ.
             if positions is None:
                 positions = book.sides()
 
@@ -231,7 +283,14 @@ def build(targets, *, equity_usd: float, prices: Dict[str, float],
         leverage=leverage,
         unprotected_positions=unprotected,
         regime_crisis="CRISIS" in str(getattr(targets, "regime", "")),
-        ftmo_reason=ftmo_reason)
+        ftmo_reason=ftmo_reason,
+        # Lý do chặn do BÊN GỌI phát hiện — hiện dùng cho cổng dữ liệu ôi mà
+        # `engine._build_plan` đo được (xem `mt5_bars.stale_symbols`). Đi qua
+        # `extra_blocks` thay vì một `return` sớm ở engine là CÓ CHỦ ĐÍCH: cổng
+        # chặn làm `allowed=False`, và `order_router.route()` vẫn cho lệnh GIẢM
+        # phơi nhiễm đi qua — tức đường THOÁT không bị khoá. Một `return` sớm sẽ
+        # lặp lại đúng lỗi đã sửa ngày 15/08/2026.
+        extra_blocks=list(extra_blocks or []))
 
     # ── 4. gộp 27 chân → tỷ trọng RÒNG
     weights = PF.target_weights(targets, positions=positions)
@@ -256,14 +315,22 @@ def build(targets, *, equity_usd: float, prices: Dict[str, float],
     for symbol in sorted(set(real) | set(want)):
         cur = float(real.get(symbol, 0.0))
         tgt = float(want.get(symbol, 0.0))
-        kind = _classify(cur, tgt)
+        min_lots = min_trade_lots(symbol, mt5)
+        kind = _classify(cur, tgt, min_lots)
         delta = abs(tgt - cur)
-        if kind == "HOLD" or delta < MIN_TRADE_LOTS:
+        too_small = delta < min_lots
+        if kind == "HOLD" or too_small:
             kind, delta = "HOLD", 0.0
         side = ("FLAT" if kind == "HOLD"
                 else "BUY" if tgt > cur else "SELL")
         st = stops.get(symbol)
         reason = ""
+        if too_small and min_lots > MIN_TRADE_LOTS:
+            # NÓI RA, đừng im lặng bỏ qua. Một công cụ có bậc lot thô hơn phần
+            # còn lại sẽ vắng mặt khỏi danh mục một cách có hệ thống, và nếu
+            # không có dòng này thì nó vắng mặt mà không ai biết vì sao.
+            reason = (f"BỎ QUA — chênh lệch {delta:.2f} lot dưới mức tối thiểu "
+                      f"{min_lots:.2f} của {symbol}")
         if st is not None and not st.ok:
             # Cầu chì không đặt được thì KHÔNG mở vị thế mới — mở mà không có cầu
             # chì là tái lập đúng lỗ hổng module `disaster_stop` sinh ra để bịt.

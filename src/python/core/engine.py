@@ -439,13 +439,28 @@ class TradingEngine:
         """
         try:
             import MetaTrader5 as mt5
+            from src.python.execution.order_router import MAGIC_BASE
 
             if mt5.terminal_info() is None:
                 self.log("🔍 [ĐỐI SOÁT] BỎ QUA — chưa kết nối MT5. "
                          "Cổng lệnh vẫn fail-closed cho tới khi đối soát được.")
                 return
             book = self._book_ref()
-            rec = book.reconcile(mt5.positions_get() or [])
+            # `positions_get()` trả None khi API lỗi. `or []` biến "không đọc
+            # được" thành "không có vị thế nào" — họ lỗi fail-open số 1 của dự án,
+            # và ở ĐÂY nó còn tệ hơn bình thường: sổ sẽ tự xoá mọi chân
+            # (`auto_close_missing`) và mọi mồ côi biến mất, nên `rec.ok` thành
+            # True và cổng lệnh MỞ đúng lúc ta không biết gì về tài khoản.
+            raw = mt5.positions_get()
+            if raw is None:
+                self.log_error("[ĐỐI SOÁT] positions_get() trả None — KHÔNG đối "
+                               "soát, cổng lệnh giữ fail-closed")
+                return
+            # MAGIC là thứ phân biệt "của hệ" với "mồ côi". `reconcile()` đã có
+            # tham số này từ bản vá sự cố 22:08 ngày 20/08, nhưng NƠI GỌI chưa
+            # bao giờ truyền — nên nhận-diện-theo-magic bị vô hiệu và mọi vị thế
+            # của chân xếp hạng vĩnh viễn là mồ côi.
+            rec = book.reconcile(raw, own_magic_base=MAGIC_BASE)
             self.log(f"🔍 [ĐỐI SOÁT] Hoàn tất đối chiếu khởi động: "
                      f"{len(rec.matched)} khớp, {len(rec.orphan)} lạ, "
                      f"{len(rec.closed_elsewhere)} đã đóng nơi khác, "
@@ -801,8 +816,30 @@ class TradingEngine:
         try:
             self._build_plan()
         except Exception as exc:                           # pragma: no cover
-            self.state["order_plan"] = {"error": f"{type(exc).__name__}: {exc}"}
-            self.log_error(f"dựng kế hoạch lệnh: {exc}")
+            # VẾT NGĂN XẾP PHẢI ĐI VÀO SỔ, KHÔNG CHỈ THÔNG ĐIỆP.
+            #
+            # Sự cố 20/08/2026: chân duy nhất dẫn tới lệnh hỏng mỗi chu kỳ với dòng
+            # `index -1 is out of bounds for axis 0 with size 0` — không tệp, không
+            # dòng, không hàm. Bot chạy "bình thường" (nhịp tim đều, MT5 OK) trong
+            # khi KHÔNG lệnh nào vào được, và không có cách nào lần ra chỗ hỏng
+            # ngoài việc sửa mã rồi khởi động lại.
+            #
+            # Console vẫn chỉ nhận một dòng gọn; vết đầy đủ đi vào JSONL để không
+            # đẩy dòng có ích ra khỏi màn hình.
+            import traceback
+
+            tb = traceback.format_exc()
+            self.state["order_plan"] = {"error": f"{type(exc).__name__}: {exc}",
+                                        "traceback": tb}
+            try:
+                from src.python.utils import ops_log
+
+                ops_log.emit("trading", "order_plan_failed",
+                             error=f"{type(exc).__name__}: {exc}", traceback=tb)
+            except Exception:
+                pass
+            self.log_error(f"dựng kế hoạch lệnh: {exc} — vết đầy đủ trong "
+                           f"logs/trading/*.jsonl")
         finally:
             self._last_plan = time.time()
             self._plan_lock.release()
@@ -907,11 +944,44 @@ class TradingEngine:
         held = book.all_bars_held(self._bar_indexes())
 
         targets = PF.live_targets(bars_held=held, log=True)
+
+        # ── CỔNG DỮ LIỆU ÔI (nối vào 22/08/2026)
+        #
+        # `mt5_bars.freshness()` có từ 15/08 và hai docstring trong `fx_data.py` khai
+        # rằng cổng chặn dữ liệu ôi nằm ở CHÍNH HÀM NÀY. Rà 22/08: hàm đó chưa từng
+        # được gọi ở đâu — lớp bảo vệ chỉ có trên giấy. Đây là chỗ nối nó.
+        #
+        # Đo trên SỔ mà `fx_data.load_m1()` vừa ghi khi `live_targets()` nạp nến cho
+        # 27 chân, nên không thêm một lần đọc dữ liệu nào. Ngưỡng và lý do chọn:
+        # `mt5_bars.STALE_MAX_AGE_H`.
+        #
+        # Đi qua `extra_blocks` (không phải `return` sớm): cổng chặn lệnh TĂNG phơi
+        # nhiễm nhưng `order_router.route()` vẫn cho lệnh GIẢM đi qua, nên time-stop
+        # và lệnh đóng vẫn tới được broker. Một `return` sớm ở đây sẽ lặp lại đúng
+        # lỗi "bấm STOP là khoá luôn đường thoát" đã sửa ngày 15/08/2026.
+        from src.python.shared import mt5_bars as _MB
+
+        extra_blocks: List[str] = []
+        try:
+            stale = _MB.stale_symbols()
+        except Exception as exc:
+            # Không đo được tuổi dữ liệu KHÔNG được hiểu là "dữ liệu tươi".
+            extra_blocks.append(
+                f"không đo được tuổi dữ liệu ({type(exc).__name__}) — fail-closed")
+        else:
+            if stale:
+                worst = max(stale.items(), key=lambda kv: kv[1])
+                extra_blocks.append(
+                    f"DỮ LIỆU ÔI: {len(stale)} công cụ có nến mới nhất cũ hơn "
+                    f"{_MB.STALE_MAX_AGE_H:.0f}h (tệ nhất {worst[0]} {worst[1]:.1f}h) "
+                    f"— không mở/tăng phơi nhiễm trên giá cũ")
+
         plan = OP.build(
             targets, equity_usd=equity, prices=prices, mt5=mt5, book=book,
             daily_vol_bps=float(self.state.get("portfolio", {}).get(
                 "daily_vol_bps") or 9.33),
-            day_start_balance=float(acc.get("balance") or equity))
+            day_start_balance=float(acc.get("balance") or equity),
+            extra_blocks=extra_blocks)
 
         self.state["order_plan"] = {
             "asof": targets.asof,
@@ -964,9 +1034,14 @@ class TradingEngine:
             try:
                 from src.python.execution import position_book as PB
 
+                # Công cụ nào broker TỪ CHỐI thì sổ không được đổi theo — xem
+                # `sync_from_targets`. `out.sent` là kết quả THẬT của từng lệnh;
+                # trước đây nó bị bỏ đi và sổ ghi thẳng theo Ý ĐỊNH.
+                failed = {r.symbol for r in out.sent if not r.ok}
                 changed = PB.sync_from_targets(
                     book, targets, prices,
-                    lots_by_symbol={a.symbol: a.target_lots for a in plan.actions})
+                    lots_by_symbol={a.symbol: a.target_lots for a in plan.actions},
+                    failed_symbols=failed)
                 for leg, what in changed.items():
                     self.log(f"[SỔ] {leg}: {what}")
             except Exception as exc:

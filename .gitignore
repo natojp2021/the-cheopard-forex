@@ -119,3 +119,4 @@ scratch/**/*.npz
 
 # Cây thư mục sinh bằng `tree` — 1,1 MB văn bản, lỗi thời ngay khi thêm file mới.
 repo_structure.txt
+claude-swap/

@@ -84,7 +84,9 @@ def daily_frame(symbol: str, start: str = "2015-01-01") -> pd.DataFrame:
     momentum giao dịch theo hướng của cặp, không cần quy ước dollar-factor.
     """
     m1 = D.load_m1(symbol)
-    g = m1.resample("1D", origin="start_day")
+    # KHÔNG truyền `origin=`: nó bằng mặc định và đổi hành vi theo phiên bản pandas — xem
+    # `shared/fx_data.build_bars`. Lưới D1 là nửa đêm UTC.
+    g = m1.resample("1D")
     d = g.agg({"open": "first", "high": "max", "low": "min", "close": "last",
                "spread_usd": "median"}).dropna(subset=["open", "high", "low", "close"])
     d = d[d.index >= start]

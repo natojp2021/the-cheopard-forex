@@ -153,6 +153,27 @@ def _make_file_handler() -> Optional[logging.Handler]:
     global _file_handler
     if _file_handler is not None:
         return _file_handler
+    # TEST KHÔNG ĐƯỢC GHI VÀO SỔ LOG CỦA TIẾN TRÌNH ĐANG CHẠY THẬT.
+    #
+    # Đo 17:37:26 ngày 21/08/2026 — những dòng này nằm trong
+    # `logs/cheopard_forex.log` của bot đang chạy live:
+    #
+    #     [CIRCUIT BREAKER OPEN] FATAL NON-RETRIABLE ERROR: retcode=10019
+    #                            (loi cap tai khoan)
+    #
+    # `loi cap tai khoan` là chuỗi `comment=` của một FIXTURE trong
+    # `test_min_lots_per_symbol_20260821`. Bộ soát log theo giờ đọc chúng như sự
+    # cố THẬT của tài khoản, và người đọc log sau này cũng vậy.
+    #
+    # Cùng họ với ba lỗ rò đã bịt ở hệ XAU (`trade_journal`,
+    # `allocation_policy`, `durable_event_log`) và với `position_book` ở chính
+    # repo này: trạng thái/hiện vật runtime không có ranh giới giữa test và live.
+    import os
+
+    if os.environ.get("CHEOPARD_DISABLE_FILE_LOG", "").strip().lower() in {
+            "1", "true", "yes"}:
+        _file_handler = None
+        return None
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         h = TimedRotatingFileHandler(

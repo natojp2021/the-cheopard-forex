@@ -1,9 +1,0 @@
-11:03:42 A import engine
-11:03:42 B tao engine
-11:03:42 C read_broker
-11:03:42 D mt5_connected=True err=
-11:03:42 E read_guards
-11:03:43 F guards=['ftmo', 'trades_today', 'consec_loss', 'dd_pct', 'breaker_tripped', 'halt_reason', 'day_start_equity', 'daily_cap_pct', 'kill_switch_pct', 'news', 'spread']
-11:03:43 G read_portfolio
-11:04:11 LOG> danh mục FourteenLegFX: Sharpe 2.178 · OOS 2.154 · |corr| nhóm 0.300 ·
-11:04:11 H portfolio=2.178

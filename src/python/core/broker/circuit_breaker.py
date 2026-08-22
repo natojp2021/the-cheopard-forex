@@ -23,6 +23,11 @@ class MT5CircuitBreaker:
     # Các mã lỗi MT5 KHÔNG được phép thử lại (Lỗi nghiêm trọng)
     FATAL_RETCODES: Set[int] = {
         10013,  # Yêu cầu không hợp lệ
+        # 10014 CỐ Ý nằm ở CẢ HAI tập, đừng "dọn" đi:
+        #   ở đây  -> `order_router._is_fatal()` trả True = KHÔNG thử lại
+        #             (gửi lại đúng khối lượng sai thì vẫn sai);
+        #   ở dưới -> `ORDER_SCOPED_RETCODES` chặn nó MỞ CẦU CHÌ.
+        # Hai câu hỏi khác nhau: "có thử lại không" và "có dừng cả lượt không".
         10014,  # Khối lượng không hợp lệ
         10015,  # Giá không hợp lệ
         10016,  # Mức Dừng lỗ/Chốt lời không hợp lệ
@@ -33,6 +38,31 @@ class MT5CircuitBreaker:
         10026,  # Giao dịch tự động bị máy chủ vô hiệu hóa
         10027,  # Giao dịch tự động bị máy khách vô hiệu hóa
         10030,  # Chế độ khớp lệnh không được hỗ trợ
+    }
+
+    # LỖI CỦA RIÊNG MỘT LỆNH — KHÔNG được hạ cả lượt gửi.
+    #
+    # SỰ CỐ 04:28 NGÀY 21/08/2026
+    # ============================
+    #     [LỖI] NZDCAD  INCREASE  SELL  0.02 lot ... retcode 10014 Invalid volume
+    #     [CIRCUIT BREAKER OPEN] FATAL NON-RETRIABLE ERROR: retcode=10014
+    #
+    # `NZDCAD.volume_min = 0.1` trong khi 26 công cụ còn lại là 0,01 — xem
+    # `order_plan.min_trade_lots` cho nguyên nhân gốc, đã sửa. Nhưng bản thân
+    # cách phân loại ở đây cũng sai một bậc: `10014` nói "KHỐI LƯỢNG CỦA LỆNH
+    # NÀY sai", không nói "tài khoản hỏng". Xếp nó cạnh 10019 (hết ký quỹ) và
+    # 10027 (tắt giao dịch tự động) là đánh đồng một lỗi tham số với một sự cố
+    # toàn tài khoản, nên một công cụ có bậc lot khác thường chặn nốt 26 công cụ
+    # còn lại, lặp lại mỗi chu kỳ.
+    #
+    # Vẫn KHÔNG thử lại — gửi lại đúng khối lượng sai thì vẫn sai. Chỉ khác ở
+    # chỗ: từ chối MỘT lệnh, không mở cầu chì.
+    #
+    # Cố ý chỉ có 10014 ở đây. 10013/10015/10016/10022 cũng mang tính "một
+    # lệnh", nhưng chưa quan sát được trên đường live nên chưa đụng — nới một
+    # lớp an toàn theo suy luận là cách nó âm thầm mục ra.
+    ORDER_SCOPED_RETCODES: Set[int] = {
+        10014,  # Khối lượng không hợp lệ — sai tham số của CHÍNH lệnh này
     }
 
     # Các mã lỗi MT5 có thể thử lại (Sự cố kết nối hoặc báo giá lại tạm thời)
@@ -145,6 +175,13 @@ class MT5CircuitBreaker:
             self._half_open_trial_started_at = 0.0
             self.last_failure_time = time.time()
             error_msg = f"retcode={retcode} ({detail})"
+
+            if retcode in self.ORDER_SCOPED_RETCODES:
+                # Từ chối ĐÚNG lệnh này, giữ nguyên trạng thái cầu chì.
+                log_error(f"⛔ [LỆNH BỊ TỪ CHỐI] {error_msg} — sai tham số của "
+                          f"riêng lệnh này, KHÔNG mở cầu chì, các lệnh còn lại "
+                          f"trong lượt vẫn được gửi.")
+                return False
 
             if retcode in self.FATAL_RETCODES:
                 self.failure_count = self.max_failures

@@ -279,6 +279,60 @@ def _make_breaker():
 _RISK_REDUCING = frozenset({"CLOSE", "REDUCE", "REVERSE_CLOSE"})
 
 
+
+# Đệm ký quỹ giữ lại. Gửi tới sát 100% ký quỹ tự do là tự đặt mình một tick nữa
+# là Margin Call.
+_MARGIN_BUFFER = 1.20
+
+
+def _margin_shortfall(mt5, req: Dict[str, Any], action: str) -> str:
+    """Lý do KHÔNG đủ ký quỹ cho lệnh này. Rỗng = đủ, cứ gửi.
+
+    LỖI ĐÃ SỬA 21/08/2026 — MỘT LỆNH KHÔNG VỪA KÝ QUỸ HẠ CẢ LƯỢT GỬI
+    =================================================================
+        17:30:24  BROKER_REJECTED (broker từ chối retcode 10019)   ×6
+        17:37:26  [CIRCUIT BREAKER OPEN] retcode=10019
+
+    `10019` là NO_MONEY, và nó nằm trong `FATAL_RETCODES`, nên một lệnh không vừa
+    ký quỹ MỞ CẦU CHÌ và chặn nốt những lệnh còn lại trong cùng lượt — đúng hình
+    dạng sự cố `10014` đã sửa sáng nay.
+
+    Đo lúc 17:45 trên chính tài khoản: notional gộp ~$571.000 = 5,7× equity ở đòn
+    bẩy 1:15, tức cần ~38% equity làm ký quỹ. Kế hoạch lệnh tính lot từ chính
+    sách đòn bẩy mà KHÔNG hỏi broker còn bao nhiêu ký quỹ tự do, nên khi danh mục
+    đã đầy thì phần còn lại của kế hoạch âm thầm rụng — và danh mục THẬT khác
+    danh mục ĐỊNH, với việc chân nào lọt được quyết định bởi THỨ TỰ GỬI chứ không
+    bởi chiến lược.
+
+    Hỏi trước bằng `order_calc_margin()` thì lệnh không vừa bị bỏ qua có LÝ DO ĐỌC
+    ĐƯỢC, cầu chì không mở, và các chân sau vẫn được xét.
+
+    KHÔNG chặn lệnh GIẢM phơi nhiễm: đóng bớt luôn TRẢ LẠI ký quỹ, và chặn đường
+    thoát vì thiếu ký quỹ là đúng cái vòng xoáy cần tránh nhất.
+
+    Fail-soft: không tính được thì cho gửi. Đoán sai theo hướng chặn sẽ làm hệ
+    đứng im vì một phép tính phụ.
+    """
+    if action in _RISK_REDUCING:
+        return ""
+    try:
+        need = mt5.order_calc_margin(req["type"], req["symbol"],
+                                     req["volume"], req["price"])
+        if need is None:
+            return ""
+        acc = mt5.account_info()
+        if acc is None:
+            return ""
+        free = float(acc.margin_free)
+    except Exception:
+        return ""
+    if float(need) * _MARGIN_BUFFER <= free:
+        return ""
+    return (f"BỎ QUA — ký quỹ không đủ: cần ${float(need):,.0f} "
+            f"(×{_MARGIN_BUFFER:.2f} đệm = ${float(need) * _MARGIN_BUFFER:,.0f}) "
+            f"nhưng chỉ còn ${free:,.0f} tự do")
+
+
 def _is_fatal(retcode) -> bool:
     """Retcode có thuộc nhóm KHÔNG tự khỏi không.
 
@@ -476,6 +530,12 @@ class OrderRouter:
             # Cầu chì đi CÙNG lệnh mở — xem bất biến 3 ở đầu file.
             if stop_price:
                 req["sl"] = float(stop_price)
+            short = _margin_shortfall(mt5, req, action)
+            if short:
+                return SendResult(symbol=symbol, action=action, side=side,
+                                  lots=lots, ok=False, price=price,
+                                  spread_bps=spread_bps, stop_price=stop_price,
+                                  reason=short)
             res = mt5.order_send(req)
             retcode = int(getattr(res, "retcode", -1))
             ok = retcode == int(getattr(mt5, "TRADE_RETCODE_DONE", 10009))

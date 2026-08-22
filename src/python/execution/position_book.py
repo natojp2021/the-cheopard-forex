@@ -145,6 +145,7 @@ class ReconcileResult:
     orphan: List[str] = field(default_factory=list)       # symbol trên broker, không có chủ
     closed_elsewhere: List[str] = field(default_factory=list)  # khoá chân
     lot_mismatch: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    healed_lots: Dict[str, Dict[str, float]] = field(default_factory=dict)
     problems: List[str] = field(default_factory=list)
 
     @property
@@ -155,6 +156,8 @@ class ReconcileResult:
     def explain(self) -> str:
         head = (f"đối soát: {len(self.matched)} khớp · {len(self.orphan)} mồ côi · "
                 f"{len(self.closed_elsewhere)} đã đóng ngoài hệ")
+        if self.healed_lots:
+            head += f" · {len(self.healed_lots)} công cụ đã cân lot theo broker"
         if self.ok:
             return head + " · SẠCH"
         return head + "\n  " + "\n  ".join(
@@ -204,6 +207,49 @@ class PositionBook:
     def sides(self) -> Dict[str, int]:
         """Chiều đang giữ của từng chân — đầu vào `positions=` của `target_weights()`."""
         return {k: (1 if v.side == "BUY" else -1) for k, v in self._pos.items()}
+
+    def _heal_symbol_lots(self, symbol: str, broker_signed_lots: float) -> bool:
+        """Cân lot của các chân giữ `symbol` cho khớp broker. True nếu đã cân.
+
+        BROKER LÀ SỰ THẬT, VÀ MỘT CÔNG CỤ LỆCH KHÔNG ĐƯỢC KHOÁ CẢ DANH MỤC
+        ================================================================
+        Sự cố 21/08/2026: sổ ghi NZDCAD −1.0 còn broker giữ −0.81 (đóng một phần
+        ngoài hệ). `ReconcileResult.ok` đòi `lot_mismatch` rỗng, nên 0.19 lot lệch
+        trên MỘT công cụ làm `reconciliation_done` False và cổng chặn TOÀN BỘ lệnh
+        mới của 27 công cụ — liên tục từ 14:08 tới 21:00, không một lệnh nào.
+
+        `auto_close_missing` đã áp đúng nguyên tắc này cho trường hợp chân biến
+        mất: broker là sự thật, giữ lại chỉ làm chân đó vĩnh viễn không vào lệnh
+        được. Lệch lot cùng một họ, chỉ khác mức độ.
+
+        Cân theo TỶ LỆ khi nhiều chân cùng giữ một công cụ (AUDCAD có ba chân):
+        không có cách nào biết chân nào bị đóng bớt, nên chia đều theo tỷ trọng
+        đang giữ. Sai số phân bổ giữa các chân nhỏ hơn hẳn cái giá của việc khoá
+        cả danh mục.
+
+        Trả False khi không cân được (tổng sổ bằng 0, hoặc dấu ngược nhau) — lúc
+        đó lệch lot là bất thường thật, để nguyên cho cổng fail-closed xử lý.
+        """
+        legs = [(k, v) for k, v in self._pos.items() if v.symbol == symbol]
+        if not legs:
+            return False
+        current = sum(v.signed_lots for _, v in legs)
+        if abs(current) < 1e-9:
+            return False
+        # Dấu ngược nhau nghĩa là sổ và broker không nói về cùng một chiều —
+        # đó là bất thường thật, không phải đóng bớt.
+        if current * broker_signed_lots <= 0:
+            return False
+        # CHỈ cân khi lot GIẢM. Broker giữ NHIỀU hơn sổ là phơi nhiễm không giải
+        # thích được — đúng thứ mà cổng fail-closed tồn tại để chặn. Đóng bớt chỉ
+        # có thể làm lot nhỏ đi, nên chiều tăng không bao giờ là đóng bớt.
+        if abs(broker_signed_lots) > abs(current):
+            return False
+        scale = broker_signed_lots / current
+        for _, v in legs:
+            v.lots = round(abs(v.lots * scale), 2)
+        self.save()
+        return True
 
     def symbol_lots(self) -> Dict[str, float]:
         """Lot RÒNG theo công cụ theo sổ. Dùng để so với broker."""
@@ -292,7 +338,10 @@ class PositionBook:
     # ─────────────────────────────────────────────── đối soát
     def reconcile(self, broker_positions: Iterable, *,
                   tolerance_lots: float = 0.01,
-                  auto_close_missing: bool = True) -> ReconcileResult:
+                  auto_close_missing: bool = True,
+                  auto_heal_lots: bool = True,
+                  own_magic_base: Optional[int] = None,
+                  own_magic_span: int = 90_000) -> ReconcileResult:
         """So sổ với vị thế THẬT trên broker. Trả kết quả, KHÔNG tự đặt lệnh.
 
         `broker_positions` là các đối tượng có `symbol`, `volume`, `type`
@@ -303,25 +352,78 @@ class PositionBook:
         lại thì chân đó vĩnh viễn không vào lệnh mới được vì `open()` sẽ báo trùng.
 
         MỒ CÔI thì TUYỆT ĐỐI không tự xử lý — xem docstring đầu file.
+
+        MAGIC LÀ THỨ PHÂN BIỆT "CỦA HỆ" VỚI "MỒ CÔI", KHÔNG PHẢI SỔ CHÂN
+        ================================================================
+        Sự cố 22:08 ngày 20/08/2026: hệ mở 22 vị thế thành công (`retcode 10009`,
+        có SL đủ), rồi TỰ KHOÁ MÌNH ở chu kỳ sau:
+
+            [ĐỐI SOÁT] 0 khớp, 22 lạ, 0 đã đóng nơi khác
+            KHÔNG GỬI LỆNH NÀO — CHẶN: đối soát khởi động CHƯA xong
+
+        Nguyên nhân là một giả định sai nằm ngay trong phép so: sổ chỉ ghi
+        `PF.SINGLE_LEGS`, còn 22 lệnh kia do các chân XẾP HẠNG (`X-MR-H1`,
+        `CCY-REV`, `CCY-CARRY`, `X-XS-H4`, `X-MOM-D1`) sinh ra. Chân xếp hạng
+        giao dịch theo RỔ, một chân chạm nhiều công cụ, nên không có khoá chân
+        nào để ghi vào sổ. So sổ-chân với vị thế-công cụ thì mọi vị thế của chân
+        xếp hạng VĨNH VIỄN là mồ côi, và cổng fail-closed khoá vĩnh viễn theo.
+
+        Câu hỏi mà `orphan` cần trả lời là "vị thế này có phải do HỆ mở không",
+        và câu đó có lời đáp chính xác hơn nhiều: MAGIC. `order_router.magic_for`
+        sinh magic tất định trong khoảng `[MAGIC_BASE, MAGIC_BASE + 90000)`, và
+        mọi lệnh của hệ đều mang nó. Đo lúc 22:14 trên chính tài khoản: 22/22 vị
+        thế có magic trong khoảng đó.
+
+        Fail-closed vẫn nguyên vẹn, và đó là điểm quan trọng nhất của bản vá này:
+        magic NGOÀI khoảng — lệnh tay, EA khác, bot khác dùng chung tài khoản —
+        vẫn là MỒ CÔI và vẫn chặn lệnh mới. Cái bỏ đi chỉ là báo động giả về
+        chính vị thế của mình.
+
+        Truyền `own_magic_base=None` để dùng `order_router.MAGIC_BASE`; truyền
+        một số âm để tắt hẳn lớp nhận diện này (chỉ dùng trong test).
         """
         res = ReconcileResult()
+        if own_magic_base is None:
+            try:
+                from src.python.execution.order_router import MAGIC_BASE
+
+                own_magic_base = int(MAGIC_BASE)
+            except Exception:
+                # Không đọc được dải magic thì KHÔNG nhận vơ vị thế nào là của
+                # mình: fail-closed đúng hướng, thà báo mồ côi thừa còn hơn bỏ
+                # sót một vị thế lạ.
+                own_magic_base = -1
+
         broker: Dict[str, float] = {}
+        ours: set = set()
         for p in broker_positions:
             sym = str(getattr(p, "symbol", ""))
             vol = float(getattr(p, "volume", 0.0) or 0.0)
             side = 1.0 if int(getattr(p, "type", 0)) == 0 else -1.0
             broker[sym] = broker.get(sym, 0.0) + side * vol
+            magic = int(getattr(p, "magic", 0) or 0)
+            if own_magic_base >= 0 and (
+                    own_magic_base <= magic < own_magic_base + own_magic_span):
+                ours.add(sym)
 
         book = self.symbol_lots()
 
         for sym, blots in broker.items():
             if abs(blots) < 1e-9:
                 continue
+            if sym in ours and (sym not in book or abs(book[sym]) < 1e-9):
+                # Vị thế của HỆ nhưng chân xếp hạng không ghi sổ được — bình
+                # thường, không phải mồ côi và cũng không phải lệch lot.
+                continue
             if sym not in book or abs(book[sym]) < 1e-9:
                 res.orphan.append(sym)
             elif abs(book[sym] - blots) > tolerance_lots:
-                res.lot_mismatch[sym] = {"sổ": round(book[sym], 3),
-                                         "broker": round(blots, 3)}
+                if auto_heal_lots and self._heal_symbol_lots(sym, blots):
+                    res.healed_lots[sym] = {"sổ cũ": round(book[sym], 3),
+                                            "broker": round(blots, 3)}
+                else:
+                    res.lot_mismatch[sym] = {"sổ": round(book[sym], 3),
+                                             "broker": round(blots, 3)}
 
         for leg, p in list(self._pos.items()):
             if abs(broker.get(p.symbol, 0.0)) < 1e-9:
@@ -341,7 +443,8 @@ class PositionBook:
 
 # ═══════════════════════════════════════════════════════ tiện ích cho engine
 def sync_from_targets(book: "PositionBook", targets, prices: Dict[str, float],
-                      *, lots_by_symbol: Optional[Dict[str, float]] = None
+                      *, lots_by_symbol: Optional[Dict[str, float]] = None,
+                      failed_symbols: Optional[Iterable[str]] = None
                       ) -> Dict[str, str]:
     """Cập nhật sổ theo Ý ĐỊNH của từng chân sau khi kế hoạch đã được gửi.
 
@@ -403,12 +506,32 @@ def sync_from_targets(book: "PositionBook", targets, prices: Dict[str, float],
             per_symbol[spec.symbols[0]] = per_symbol.get(spec.symbols[0], 0) + 1
 
     asof = str(getattr(targets, "asof", "") or "")
+    failed = {str(s) for s in (failed_symbols or ())}
     for leg, side in wanted.items():
         if leg not in meta:
             continue
         symbol, tf = meta[leg]
         cur = current.get(leg, 0)
         if side == cur:
+            continue
+        if symbol in failed:
+            # BROKER TỪ CHỐI THÌ SỔ KHÔNG ĐƯỢC ĐỔI.
+            #
+            # Đo 19:14 ngày 20/08/2026: 27 lệnh bị từ chối `retcode=10027`
+            # (AutoTrading tắt ở terminal), vậy mà sổ vẫn ghi ba chân AUDCAD BUY
+            # 0,16 lot với `ticket=0` trong khi broker có ĐÚNG 0 vị thế. Sổ ghi
+            # theo Ý ĐỊNH, không theo kết quả.
+            #
+            # Hậu quả không dừng ở một dòng sai: `open()` từ chối mở lại chân đã
+            # có trong sổ, nên chân đó KHÔNG THỂ thử lại chừng nào bóng ma còn
+            # nằm đó; `sides()` báo chân đang giữ lệnh nên hai chân ngược chiều
+            # tưởng đã triệt tiêu nhau; và đồng hồ time-stop bắt đầu chạy cho một
+            # vị thế không tồn tại.
+            #
+            # `reconcile()` chu kỳ sau có dọn được, nhưng "sai rồi tự sửa" không
+            # phải thiết kế đúng cho sổ vị thế — giữa hai thời điểm đó hệ ra
+            # quyết định trên một thế giới không có thật.
+            changes[leg] = f"BỎ QUA — broker TỪ CHỐI lệnh {symbol}, sổ giữ nguyên"
             continue
         if cur != 0:
             book.close(leg, reason="đảo chiều" if side else "tín hiệu thoát")
