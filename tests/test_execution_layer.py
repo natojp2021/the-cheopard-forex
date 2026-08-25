@@ -979,6 +979,31 @@ def test_summarise_groups_by_close_reason():
 # không có luồng giao diện, nên cả lớp lỗi "gọi Tk từ luồng sai" biến mất theo —
 # không phải được vá, mà là không còn chỗ để xảy ra.
 
+def test_undelivered_symbols_excludes_duplicate_skip_from_sync():
+    """SỰ CỐ 25/08/2026 — khoá chống-gửi-lặp còn giữ trả `ok=True`, nhưng lệnh đó
+    CHƯA từng chạm broker lần này. Đưa thẳng `r.ok` vào `sync_from_targets`
+    (bỏ sót nhánh "BỎ QUA — trùng khoá") khiến sổ ghi "MỞ" cho một vị thế ma —
+    đúng lỗi hạng này mà `sync_from_targets` sinh ra để tránh, chỉ khác ở CHỖ
+    đưa vào (`failed_symbols` thiếu, không phải bản thân `sync_from_targets` sai).
+    """
+    from src.python.core.engine import _undelivered_symbols
+
+    real_reject = OR.SendResult(symbol="AUDCAD", action="OPEN", side="BUY",
+                                lots=1.0, ok=False, dry_run=False,
+                                reason="broker từ chối retcode 10019")
+    duplicate_skip = OR.SendResult(symbol="GBPUSD", action="OPEN", side="SELL",
+                                   lots=1.0, ok=True, dry_run=False,
+                                   reason="BỎ QUA — trùng khoá chống gửi lặp")
+    real_fill = OR.SendResult(symbol="USDJPY", action="OPEN", side="SELL",
+                              lots=1.0, ok=True, dry_run=False, reason="")
+
+    got = _undelivered_symbols([real_reject, duplicate_skip, real_fill])
+
+    assert got == {"AUDCAD", "GBPUSD"}, (
+        "lệnh bị từ chối THẬT và lệnh bị khoá trùng lặp đều không được đồng bộ "
+        "vào sổ như thể đã khớp; chỉ lệnh khớp thật (USDJPY) được đồng bộ")
+
+
 def test_engine_finalises_positions_closed_on_broker(monkeypatch, _ctl, tmp_path):
     """Vị thế biến mất khỏi broker → sổ phải được dọn VÀ ghi nhận.
 

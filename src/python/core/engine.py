@@ -107,6 +107,23 @@ def _log_incident(what: str, exc: BaseException) -> None:
         pass                          # đến đây mà còn hỏng thì thôi, đừng làm chết engine
 
 
+def _undelivered_symbols(sent) -> set:
+    """Công cụ nào trong `out.sent` KHÔNG thực sự chạm broker lần này.
+
+    SỰ CỐ 25/08/2026 — `r.ok=True` không đồng nghĩa "vừa gửi thành công tới broker".
+    Lệnh bị khoá chống-gửi-lặp giữ (`create_order()` trả `None` vì claim đã có người
+    giữ — khởi động lại giữa lúc claim chưa nhả, hoặc chu kỳ sau lặp đúng tín hiệu)
+    cũng trả `ok=True, reason="BỎ QUA — trùng khoá..."`: đúng cho đường gửi lệnh
+    (không được gửi lại thật khi khoá còn sống), nhưng SAI nếu đem thẳng vào
+    `sync_from_targets(failed_symbols=...)` — hàm đó chỉ loại symbol có mặt trong
+    tập trả về, nên bỏ sót trường hợp này khiến sổ ghi "MỞ" cho một lệnh chưa từng
+    rời tiến trình lần này, tạo đúng vị thế ma mà `sync_from_targets` sinh ra để
+    tránh (xem docstring của nó).
+    """
+    return {r.symbol for r in sent
+            if not r.ok or (r.reason or "").startswith("BỎ QUA — trùng khoá")}
+
+
 class TradingEngine:
     """Động cơ CHỈ ĐỌC: làm mới trạng thái cho bảng điều khiển.
 
@@ -1060,10 +1077,11 @@ class TradingEngine:
             try:
                 from src.python.execution import position_book as PB
 
-                # Công cụ nào broker TỪ CHỐI thì sổ không được đổi theo — xem
-                # `sync_from_targets`. `out.sent` là kết quả THẬT của từng lệnh;
-                # trước đây nó bị bỏ đi và sổ ghi thẳng theo Ý ĐỊNH.
-                failed = {r.symbol for r in out.sent if not r.ok}
+                # Công cụ nào KHÔNG thực sự chạm broker lần này thì sổ không được
+                # đổi theo — xem `_undelivered_symbols` và `sync_from_targets`.
+                # `out.sent` là kết quả THẬT của từng lệnh; trước đây nó bị bỏ đi và
+                # sổ ghi thẳng theo Ý ĐỊNH.
+                failed = _undelivered_symbols(out.sent)
                 changed = PB.sync_from_targets(
                     book, targets, prices,
                     lots_by_symbol={a.symbol: a.target_lots for a in plan.actions},
