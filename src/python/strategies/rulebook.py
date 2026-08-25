@@ -4,7 +4,7 @@ VÌ SAO MODULE NÀY PHẢI TỒN TẠI, BÊN CẠNH `rule_trace.py`
 ========================================================
 Hai thứ khác nhau, và thiếu một trong hai là thiếu thật:
 
-    `rule_trace.py`   bản ghi RUNTIME — "hôm nay EURGBP được mua vì hạng 3/20"
+    `rule_trace.py`   bản ghi RUNTIME — "hôm nay EURUSD được bán vì hạng A"
     `rulebook.py`     thẻ luật KHAI BÁO — "luật của chiến lược này là gì"
 
 Bản ghi runtime trả lời "hôm nay xảy ra chuyện gì". Thẻ luật trả lời "hệ thống được
@@ -12,13 +12,13 @@ PHÉP làm gì". Khi một lệnh thua bất thường, phải đối chiếu HA
 ghi khớp thẻ luật thì luật chạy đúng và thị trường đi ngược; nếu lệch thì code đã trôi
 khỏi luật. Chỉ có một trong hai thì không phân biệt được hai tình huống đó.
 
-CHUẨN LẤY TỪ `quant-xau/src/python/live_strategies/h1/xau_r_h1.py`
-==================================================================
-Hệ XAUUSD ghi thẻ luật trong docstring, bảy mục đánh số: định danh · khung giờ · chỉ
-báo · vào lệnh · thoát lệnh · chặn riêng · tần suất. Cấu trúc đó đúng và được giữ
-nguyên ở đây. Điều được ĐỔI: docstring là văn bản tự do, không ai kiểm được nó có đủ
-bảy mục không, và nó trôi khỏi code mà không ai biết. Bản này là dữ liệu — nên
-`tests/test_rulebook.py` kiểm được tính đầy đủ, và GUI render được thẳng.
+VÌ SAO LÀ DỮ LIỆU, KHÔNG PHẢI DOCSTRING
+=======================================
+Thẻ luật bảy mục (định danh · khung giờ · chỉ báo · vào lệnh · thoát lệnh · chặn
+riêng · tần suất) hoàn toàn viết được trong một docstring. Vấn đề là docstring là văn
+bản tự do: không ai kiểm được nó có đủ bảy mục không, và nó trôi khỏi code mà không
+ai biết. Bản này là DỮ LIỆU — nên `tests/test_rulebook.py` kiểm được tính đầy đủ, và
+tầng trình bày render được thẳng.
 
 MỘT THẺ LUẬT HỢP LỆ PHẢI TRẢ LỜI ĐƯỢC BẢY CÂU
 ==============================================
@@ -58,9 +58,10 @@ class RuleBook:
     execution_tf: str
     direction: str                        # LONG_ONLY | SHORT_ONLY | BOTH
     universe: Tuple[str, ...]             # rổ XẾP HẠNG / sinh tín hiệu
-    # Rổ GIAO DỊCH — thường TRÙNG `universe`, nhưng không phải luôn. Chân currency
-    # xếp hạng 8 ĐỒNG TIỀN rồi quy sang 7 CẶP để khớp: hai rổ khác nhau về bản chất,
-    # và gộp chúng làm một là cách để một hôm nào đó có người đặt lệnh lên "EUR".
+    # Rổ GIAO DỊCH — thường TRÙNG `universe`, nhưng không phải luôn: một chân có
+    # thể sinh tín hiệu trên 8 ĐỒNG TIỀN rồi quy sang 7 CẶP để khớp. Hai rổ khác nhau
+    # về bản chất, và gộp chúng làm một là cách để một hôm nào đó có người đặt lệnh
+    # lên "EUR" — một thứ không giao dịch được.
     traded: Tuple[str, ...] = ()
     max_positions: Optional[int] = None   # None = không giới hạn cứng
     family: str = ""                      # họ chiến lược
@@ -100,7 +101,7 @@ class RuleBook:
         return asdict(self)
 
     def render(self) -> str:
-        """Bản in bảy mục — cùng bố cục thẻ luật của hệ XAUUSD."""
+        """Bản in bảy mục, cho người đọc."""
         L: List[str] = []
         bar = "=" * 79
         L.append(bar)

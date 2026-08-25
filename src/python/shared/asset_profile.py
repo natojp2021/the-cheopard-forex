@@ -170,7 +170,7 @@ FX_ALL: Tuple[str, ...] = TIER1 + TIER2
 # THÊM 14/08/2026 SAU KHI PHÁT HIỆN MỘT LỖ HỔNG NGHIÊM TRỌNG Ở TẦNG SIZING.
 #
 # `PROFILES` trước hôm nay chỉ có 7 cặp USD, và `portfolio_sizing._require_pair_weights()`
-# ném `ValueError` cho mọi khoá lạ. Nhưng 22 trong 27 chân giao dịch CẶP CHÉO — tức
+# ném `ValueError` cho mọi khoá lạ. Nhưng phần lớn các chân giao dịch CẶP CHÉO — tức
 # đường quy đổi tỷ trọng sang lot KHÔNG CHẠY ĐƯỢC cho phần lớn danh mục, và điều đó
 # chỉ lộ ra khi có người thật sự nối `target_weights()` vào `weights_to_lots()`.
 #
@@ -203,7 +203,7 @@ for _name, _base, _quote in _CROSS_DEFS:
 
 CROSSES: Tuple[str, ...] = tuple(n for n, _, _ in _CROSS_DEFS)
 
-# Rổ GIAO DỊCH đầy đủ của danh mục 27 chân: 7 major + 21 cross.
+# Rổ GIAO DỊCH đầy đủ của danh mục nhiều chân: 7 major + 21 cross.
 TRADED_ALL: Tuple[str, ...] = tuple(TIER1 + TIER2) + CROSSES
 
 

@@ -1,7 +1,7 @@
 """fx_data.py — nạp dữ liệu thị trường cho The Cheopard Forex. SSOT, không phụ thuộc chiến lược.
 
 Module này thay `research/fx_lab.py` (đã xoá 13/08/2026). `fx_lab` tồn tại để trả lời
-đúng MỘT câu hỏi — "8 strategy family của hệ XAUUSD có edge trên Forex không?" — và câu
+đúng MỘT câu hỏi — "8 strategy family của một hệ một-tài-sản có edge trên Forex không?" — và câu
 trả lời đã có, dứt khoát: **KHÔNG** (28/33 biến thể NO_INFORMATION, MFE/|MAE| ≈ 1,00;
 xem `docs/forex/00_ket_qua_vong_1.md`). Giữ lại nó chỉ mời gọi việc lặp lại một hướng
 đã bị bác bỏ, nên phần nạp dữ liệu — thứ duy nhất còn giá trị — được tách về đây.
@@ -233,7 +233,7 @@ def build_bars(m1: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     # khiển gì; nó chỉ TRÔNG như một cần điều khiển lưới nến D1. Nguy hiểm nằm ở
     # chỗ nó hoạt động khác nhau theo phiên bản pandas:
     #     pandas 2.3.3 (venv hiện tại)  `origin` CÓ tác dụng với freq "1D"
-    #     pandas 3.0.3 (hệ `quant-xau`) `origin` bị BỎ QUA + `RuntimeWarning`
+    #     pandas 3.0.3 (hệ `hệ một-tài-sản`) `origin` bị BỎ QUA + `RuntimeWarning`
     # Nghĩa là code dựa vào `origin` để đổi lưới D1 sẽ chạy đúng hôm nay và ÂM
     # THẦM đổi hành vi ngay khi nâng pandas — hệ anh em đã ở phiên bản đó.
     #

@@ -1,53 +1,31 @@
-"""exit_manager.py — QUẢN LÝ LỆNH SAU KHI MỞ. Bản Forex của `exit_pipeline` hệ XAU.
+"""exit_manager.py — GHI NHẬN KHI LỆNH ĐÓNG. Không dời stop, không trailing.
 
-PIPELINE CHUẨN CỦA HỆ XAUUSD, VÀ PHẦN NÀO PORT ĐƯỢC
-====================================================
-Hệ tiền nhiệm quản lý lệnh bằng ba cơ chế, cộng một đường ghi nhận khi đóng:
+CÁI GÌ ĐÓNG LỆNH — VÀ VÌ SAO KHÔNG PHẢI MODULE NÀY
+===================================================
+    dừng lỗ / chốt lời   nằm trên SERVER broker, đi kèm lệnh mở. Đây là lối thoát
+                         chính, và với phần lớn lệnh là lối thoát DUY NHẤT.
+    mốc đóng phiên       chiến lược trong phiên đóng hết ở một giờ cố định.
+    cầu chì thảm hoạ     chỉ khi tiến trình chết — xem `disaster_stop.py`.
 
-    dừng lỗ 3×ATR      → hệ Forex KHÔNG có. Đo trên chính 22 chân
-                          (`research/fx/sl_test.py`): mọi mức đều tệ hơn, và 1×ATR
-                          còn làm MaxDD TỆ ĐI 4,00σ → 5,03σ.
-    break-even +3R     → KHÔNG có. Đo (`research/fx/trailing_test.py`): BE ở
-                          0,5×ATR làm Sharpe 3,327 → 3,172; ở 2-3×ATR thì KHÔNG BAO
-                          GIỜ kích hoạt (3,327 y hệt). Tức hoặc gây hại, hoặc vô
-                          dụng — không có vùng nào có ích.
-    trailing ATR       → KHÔNG có. Và **chính hệ XAUUSD cũng đã loại bỏ nó ngày
-                          23/07** sau khi đo. Đo lại trên FX: trailing 1×ATR làm
-                          Sharpe 3,327 → 1,826 (−45%) và MaxDD 4,25σ → 8,35σ.
-    ghi nhận khi đóng  → **PORT ĐẦY ĐỦ. Đây là module này.**
+Cả ba đều KHÔNG cần một vòng lặp quản lý lệnh ở live. Đó là quyết định thiết kế, và
+nó có số đo: dời stop về breakeven sau khi chốt một phần làm kỳ vọng TỤT từ +0,0893
+xuống +0,0124 R mỗi lệnh trên cùng 462 lệnh (winrate tăng 10 điểm, PF giảm từ 1,260
+xuống 1,039). Cơ chế: chốt một phần mua tỷ lệ thắng bằng cách bán mất phần đuôi lãi,
+rồi breakeven quét nốt phần còn lại của những lệnh đang đi đúng hướng.
 
-Nói cách khác: "sao chép hệ cũ" ở đây nghĩa là sao chép cả những QUYẾT ĐỊNH LOẠI BỎ
-của nó, không phải sao chép mọi nhánh code từng tồn tại. Ba cơ chế đầu bị loại vì
-cùng một cơ chế kinh tế: chiến lược hồi quy VÀO LỆNH KHI GIÁ ĐANG ĐI NGƯỢC, nên mọi
-thứ cắt sớm đều cắt đúng vào phần lợi nhuận.
+Hệ quả kiến trúc quan trọng hơn cả con số: MỘT dừng lỗ và MỘT chốt lời nằm trên server
+thì backtest và live thoát ở ĐÚNG cùng một giá. Mỗi nhánh của một vòng lặp quản lý lệnh
+là một chỗ live có thể lệch khỏi backtest mà không ai biết.
 
-VẬY THÌ CÁI GÌ ĐÓNG LỆNH?
-=========================
-    tín hiệu NGƯỢC chiều   chiến lược tự phát, xem thẻ luật từng chân
-    time-stop              lối thoát chính, và với phần lớn lệnh là lối thoát DUY NHẤT
-    cầu chì thảm hoạ       chỉ khi phần mềm chết — xem `disaster_stop.py`
-
-VÌ SAO VẪN CẦN MODULE NÀY KHI KHÔNG CÓ TRAILING
-================================================
-Vì "quản lý lệnh" không chỉ là dời stop. Phần còn lại — và là phần hệ Forex đang
-thiếu hoàn toàn — là **ghi nhận khi đóng**: lệnh đóng vì lý do gì, giữ bao lâu, lãi
-lỗ bao nhiêu, đã từng lãi nhất bao nhiêu (MFE) và lỗ sâu nhất bao nhiêu (MAE).
+VẬY MODULE NÀY LÀM GÌ
+=====================
+**Ghi nhận khi đóng**: lệnh đóng vì lý do gì, giữ bao lâu, lãi lỗ bao nhiêu, đã từng
+lãi nhất bao nhiêu (MFE) và lỗ sâu nhất bao nhiêu (MAE).
 
 Thiếu nó thì không trả lời được câu hỏi vận hành quan trọng nhất khi live lệch khỏi
-backtest: **lệch ở đâu?** Có phải time-stop đang đóng sớm hơn backtest? Có phải cầu
-chì nổ thường xuyên hơn dự kiến? Không có bản ghi thì chỉ thấy "equity thấp hơn dự
-kiến" và không lần ra được.
-
-MFE/MAE LÀ HAI SỐ ĐÁNG GIÁ NHẤT TRONG BẢN GHI
-==============================================
-Chúng cho biết lệnh ĐÃ TỪNG ở đâu trước khi kết thúc:
-
-    MFE cao mà kết quả âm  → thoát quá muộn, hoặc thiếu cơ chế chốt lời
-    MAE sâu mà kết quả dương → đã suýt chạm cầu chì; nếu mẫu này lặp lại thì cầu chì
-                               đang quá gần và sắp bắt đầu cắt vào nhiễu
-
-Đó cũng chính là hai đại lượng đã dùng để BÁC BỎ dừng lỗ và trailing, nên ghi chúng
-ở live là cách kiểm chứng lại kết luận đó bằng tiền thật.
+backtest: **lệch ở đâu?** Có phải dừng lỗ bị quét thường xuyên hơn dự kiến? Có phải
+chốt lời không bao giờ tới? Không có bản ghi thì chỉ thấy "equity thấp hơn dự kiến"
+và không lần ra được.
 """
 from __future__ import annotations
 

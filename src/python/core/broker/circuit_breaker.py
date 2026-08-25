@@ -44,10 +44,10 @@ class MT5CircuitBreaker:
     #
     # SỰ CỐ 04:28 NGÀY 21/08/2026
     # ============================
-    #     [LỖI] NZDCAD  INCREASE  SELL  0.02 lot ... retcode 10014 Invalid volume
+    #     [LỖI] <công cụ>  INCREASE  SELL  0.02 lot ... retcode 10014 Invalid volume
     #     [CIRCUIT BREAKER OPEN] FATAL NON-RETRIABLE ERROR: retcode=10014
     #
-    # `NZDCAD.volume_min = 0.1` trong khi 26 công cụ còn lại là 0,01 — xem
+    # một công cụ có `volume_min = 0.1` trong khi phần còn lại là 0,01 — xem
     # `order_plan.min_trade_lots` cho nguyên nhân gốc, đã sửa. Nhưng bản thân
     # cách phân loại ở đây cũng sai một bậc: `10014` nói "KHỐI LƯỢNG CỦA LỆNH
     # NÀY sai", không nói "tài khoản hỏng". Xếp nó cạnh 10019 (hết ký quỹ) và

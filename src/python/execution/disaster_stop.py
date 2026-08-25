@@ -1,78 +1,33 @@
-"""disaster_stop.py — lệnh dừng lỗ THẢM HOẠ đặt trên broker, cho danh mục không có SL.
+"""disaster_stop.py — CẦU CHÌ HẠ TẦNG. Lớp cuối, KHÔNG phải dừng lỗ giao dịch.
 
-VÌ SAO MODULE NÀY TỒN TẠI, KHI CẢ 27 CHÂN ĐỀU CỐ Ý KHÔNG CÓ DỪNG LỖ
-====================================================================
-Hai loại dừng lỗ khác nhau, và lẫn chúng là cách phá hỏng chiến lược:
+HAI LOẠI DỪNG LỖ, VÀ ĐỪNG LẪN
+==============================
+    dừng lỗ CHIẾN LƯỢC   do chiến lược khai, 24-32 pip, đi kèm lệnh mở. Đây là luật
+                         GIAO DỊCH — nó quyết định rủi ro mỗi lệnh.
+    cầu chì (module này)  >= 8xATR. Đây là luật HẠ TẦNG — nó chỉ trả lời một câu:
+                         nếu TIẾN TRÌNH CHẾT thì vị thế mất bao nhiêu trước khi
+                         broker tự đóng?
 
-    dừng lỗ CHIẾN LƯỢC   "luận điểm giao dịch đã sai"      → hệ này KHÔNG dùng
-    dừng lỗ THẢM HOẠ     "phần mềm đã chết"                → hệ này BẮT BUỘC có
+Cầu chì LUÔN xa hơn dừng lỗ chiến lược, nên trong vận hành bình thường nó không bao
+giờ chạm. Điều KHÔNG được làm là để cầu chì THAY dừng lỗ chiến lược: 8xATR trên
+EURUSD là ~80 pip, tức gần BA LẦN rủi ro dự kiến của một lệnh.
 
-Loại thứ nhất bị loại có bằng chứng. Đo LẠI ngày 14/08/2026 trên chính danh mục 22
-chân một-công-cụ đang chạy (`research/fx/sl_test.py`, mô phỏng MAE trên 100% lệnh
-thật, quét bóng nến chứ không đợi nến đóng):
+VÌ SAO >= 8xATR, KHÔNG PHẢI 2-3xATR
+====================================
+Vì cầu chì phải nằm ĐỦ XA để không cắt ngang một lệnh còn hợp lệ. Một cầu chì đặt gần
+sẽ biến thành một dừng lỗ mà không ai chọn — và nó cắt đúng những lệnh đang tạm âm
+nhưng vẫn trong kịch bản. Đặt xa thì nó chỉ kích hoạt ở đúng tình huống nó sinh ra để
+xử lý: phần mềm không còn chạy.
 
-    SL         Sharpe   FORM    OOS    MaxDD(σ)   chân TỆ ĐI   % lệnh bị dừng
-    không có   3,634    3,836   3,298    4,00       0/22            0,0%
-    1×ATR      2,786    2,918   2,567    5,03      20/22            6,4%
-    2×ATR      3,272    3,411   3,055    3,66      16/22            1,1%
-    3×ATR      3,521    3,703   3,222    3,87       5/22            0,3%
-    4×ATR      3,563    3,733   3,290    3,97       3/22            0,1%
-    8×ATR      3,579    3,755   3,295    4,01       1/22            0,0%
-    12×ATR     3,634    3,836   3,298    4,00       0/22            0,0%
+NGÂN SÁCH THEO VỊ THẾ
+=====================
+`PER_POSITION_BUDGET_PCT` giới hạn tổn thất TỐI ĐA của một vị thế nếu cầu chì nổ, tính
+bằng % equity. Nó là ràng buộc NGƯỢC lên cỡ vị thế: cỡ càng lớn thì cầu chì phải càng
+gần, và gần quá thì vi phạm nguyên tắc ở trên.
 
-Ba điều đọc được, và điều thứ ba mới là điều quan trọng:
-
-  1. MỌI mức SL đều tệ hơn không SL, và càng đặt gần càng tệ. Đơn điệu, không có
-     điểm ngọt nào ở giữa.
-  2. Ở 1×ATR mất 23% Sharpe — vì chiến lược hồi quy VÀO LỆNH KHI GIÁ ĐANG ĐI NGƯỢC,
-     nên SL gần luôn bị quét đúng trước lúc hồi.
-  3. **SL KHÔNG làm giảm drawdown.** Ở 1×ATR, MaxDD TỆ ĐI: 4,00σ → 5,03σ. Đây là
-     phản trực giác nhưng đúng cơ chế: dừng lỗ biến một khoản lỗ CÒN HỒI ĐƯỢC thành
-     một khoản lỗ ĐÃ THỰC HIỆN, rồi chiến lược vào lại và trả thêm một lượt phí.
-     Nói cách khác, ở hệ này SL không mua được sự an toàn nào — nó chỉ tính tiền.
-
-Vì vậy "không có SL chiến lược" không phải liều lĩnh; nó là mức tối ưu ĐO ĐƯỢC.
-
-GIÁ CỦA CẦU CHÌ — CŨNG ĐO ĐƯỢC
-===============================
-Cùng bảng trên trả lời luôn câu "vậy đặt cầu chì tốn bao nhiêu": ở 8×ATR, Sharpe
-3,634 → **3,579**, tức mất **1,5%**, và chỉ 1/22 chân bị ảnh hưởng, 0,0% số lệnh bị
-dừng trong toàn bộ 6,5 năm. Đó là phí bảo hiểm cho việc không bao giờ để vị thế nằm
-trần khi phần mềm chết — và đó chính là lý do `MIN_ATR_MULT = 8,0` chứ không phải 3.
-
-Loại thứ hai KHÔNG liên quan gì tới chiến lược. Nó trả lời một câu khác hẳn:
-
-    "Nếu tiến trình Python chết lúc 02:00 sáng thứ Tư, ai đóng vị thế?"
-
-Câu trả lời hiện tại của hệ này là KHÔNG AI. Time-stop chỉ chạy khi bot còn sống;
-`ftmo_leverage_policy` chỉ can thiệp ở lần quyết định kế tiếp. Mất điện, mất mạng,
-Windows update, MT5 treo — vị thế đứng trần cho tới khi có người phát hiện. Hệ
-XAUUSD tiền nhiệm có trạng thái `PROTECTED` nghĩa là SL đã nằm trên server broker;
-hệ này port sang mà bỏ mất lớp đó.
-
-CÁCH ĐẶT KHOẢNG CÁCH — TỪ NGÂN SÁCH, KHÔNG TỪ BIẾN ĐỘNG
-========================================================
-SL theo ATR là SL chiến lược trá hình: nó phản ứng với nhiễu thị trường, tức đúng
-thứ vừa bị bác bỏ. Khoảng cách ở đây suy ngược từ **số tiền tối đa chấp nhận mất
-trên MỘT vị thế nếu không ai còn ở đó**:
-
-    tổn thất = notional × biến_động_giá
-    notional = |tỷ trọng| × equity × đòn bẩy
-    ⟹  biến_động_giá = ngân_sách_% / (|tỷ trọng| × đòn bẩy)
-
-Với ngân sách 2,0% equity, đòn bẩy 3,7x và chân nặng nhất |w| = 0,11:
-
-    khoảng cách = 2,0 / (0,11 × 3,7) = **4,9%** giá
-
-So với σ ngày điển hình của FX (~0,5%) thì đó là **~10σ** — xa tới mức nhiễu thường
-không bao giờ chạm, và chỉ một cú sập thật mới kích hoạt. Đúng ý đồ: nó là cầu chì,
-không phải công tắc.
-
-RÀNG BUỘC PHẢI KIỂM: CẦU CHÌ KHÔNG ĐƯỢC THÀNH CÔNG TẮC
-=======================================================
-Nếu khoảng cách tính ra NHỎ hơn `MIN_ATR_MULT × ATR ngày` thì vị thế đang quá lớn
-so với ngân sách thảm hoạ, và SL sẽ bắt đầu cắt vào nhiễu bình thường — tức tái lập
-đúng cái đã đo là làm tệ đi. `check()` báo lỗi thay vì âm thầm đặt SL gần.
+⚠️ Con số hiện tại được hiệu chỉnh cho một danh mục sizing theo TỶ TRỌNG. Chiến lược
+hiện tại sizing theo KHOẢNG CÁCH SL nên rủi ro mỗi lệnh nhỏ hơn nhiều lần — ngân sách
+này vì vậy chưa ràng buộc đúng đại lượng. Xem `registry.PORTFOLIO["can_do_lai"]`.
 """
 from __future__ import annotations
 
@@ -133,7 +88,7 @@ def max_weight_for_fuse(atr_daily_pct: float, leverage: float, *,
         ⟹  w <= budget / (lev × min_atr_mult × ATR)
 
     Với ATR ngày 0,5%, đòn bẩy 3,7x, ngân sách 2,0%: w <= **13,5%** một công cụ.
-    Danh mục 27 chân hiện tại có tỷ trọng lớn nhất 11,2% nên nằm dưới trần — nhưng
+    Tỷ trọng lớn nhất của danh mục hiện tại nằm dưới trần — nhưng
     một danh mục chỉ vài chân hoạt động sẽ vượt, và khi đó `compute()` từ chối đúng
     như thiết kế: không phải "cầu chì hỏng" mà là "vị thế quá tập trung để bảo vệ".
     """

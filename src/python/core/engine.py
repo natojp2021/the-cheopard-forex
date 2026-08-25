@@ -139,7 +139,7 @@ class TradingEngine:
 
         # NGỦ ĐÔNG cuối tuần. Pha trước đó đọc TỪ ĐĨA, không phải từ RAM.
         #
-        # Lỗi đã sửa 15/08/2026 (hệ XAUUSD báo trước, hệ này mắc y hệt): email "ngủ
+        # Lỗi đã sửa 15/08/2026 (một hệ một-tài-sản báo trước, hệ này mắc y hệt): email "ngủ
         # đông" sáng thứ Bảy luôn tới, email "thức dậy" sáng thứ Hai KHÔNG BAO GIỜ
         # tới. Cờ này phải sống ~45 giờ liên tục từ lúc đóng tới lúc mở lại, mà một
         # lần VPS reboot hay watchdog kill trong quãng đó đưa nó về `None` và nhánh
@@ -192,7 +192,7 @@ class TradingEngine:
             #
             # Giao diện đọc khoá này để chạy hiệu ứng "ĐANG CHẠY…" (xem
             # `gui_command_center.busy_text`). Lúc mở bảng điều khiển, engine mất
-            # ~2 phút cho `PF.backtest()` 27 chân mà màn hình không có gì đổi —
+            # ~2 phút cho `PF.backtest()` nhiều chân mà màn hình không có gì đổi —
             # không phân biệt được "đang làm việc" với "đã treo".
             "busy": "",
         }
@@ -265,7 +265,7 @@ class TradingEngine:
             · 8 lần thử với backoff luỹ thừa 0,5 → 16 giây (~63 giây tổng)
             · DỪNG SỚM ở mã lỗi cố định {-2, -3, -6} — cấu hình sai thì thử lại vô ích
             · dự phòng `mt5.login()` khi `initialize(login=…)` không vào đúng tài khoản
-            · `_prime_symbols()` — đưa cả 27 công cụ vào Market Watch VÀ ép tải lịch sử
+            · `_prime_symbols()` — đưa toàn bộ công cụ vào Market Watch VÀ ép tải lịch sử
 
         Việc cuối là thứ chữa dòng "DỮ LIỆU CŨ · EURUSD" trên VPS: `symbol_select`
         không kích hoạt tải nến, chỉ `copy_rates_from_pos` mới làm, và lần gọi đầu
@@ -277,7 +277,7 @@ class TradingEngine:
         động (người vận hành đang nhìn màn hình chờ), nhưng đưa vào nhịp 5 giây thì
         mọi cổng rủi ro chạy trễ theo — và cổng rủi ro trễ là cổng rủi ro hỏng.
 
-        KHÔNG chặn khởi động khi nối hỏng, KHÁC bản XAUUSD có chủ ý: bên đó một tài
+        KHÔNG chặn khởi động khi nối hỏng, KHÁC bản một-tài-sản có chủ ý: bên đó một tài
         sản, không nối được thì không có gì để làm. Bên này bảng điều khiển vẫn phải
         lên để người vận hành đọc được lý do — và `entry_gate` đã fail-closed, nên
         không kết nối thì cũng không có lệnh nào ra.
@@ -322,7 +322,7 @@ class TradingEngine:
             self.state["busy"] = ""
 
     def _log_startup_banner(self) -> None:
-        """Bộ dòng log KHỞI ĐỘNG, đúng bộ và đúng thứ tự của hệ XAUUSD.
+        """Bộ dòng log KHỞI ĐỘNG, đúng bộ và đúng thứ tự của một hệ một-tài-sản.
 
         Bốn dòng, mỗi dòng trả lời một câu mà người vận hành hỏi ngay khi mở ứng
         dụng, và không dòng nào lặp lại ở chu kỳ sau:
@@ -530,7 +530,7 @@ class TradingEngine:
         là CHẶN LỆNH MỚI — `entry_gate`, `ftmo_leverage_policy`, `trading_control`
         đều không đụng tới vị thế đang mở.
 
-        Với đúng danh mục này thì đó là lỗ hổng chí mạng: 27 chân giữ lệnh qua đêm
+        Với đúng danh mục này thì đó là lỗ hổng chí mạng: nhiều chân giữ lệnh qua đêm
         và qua cuối tuần, không chân nào có SL theo giá. Giá chạy ngược cả rổ thì
         trước đây không có gì đóng cho tới khi cầu chì `disaster_stop` nổ ở ≥8×ATR
         — mà lúc đó tổn thất đã xảy ra rồi, và nhiều vị thế cùng nổ thì tổng đã
@@ -592,7 +592,7 @@ class TradingEngine:
         Gửi theo lịch ("cứ 00:00 Thứ Bảy thì gửi") sai ở hai đầu: bot khởi động lại
         lúc 03:00 Thứ Bảy sẽ không gửi gì cả, còn bot chạy liên tục mà lịch trôi qua
         lúc đang bận sẽ gửi trễ hoặc gửi trùng. So sánh với trạng thái CHU KỲ TRƯỚC
-        thì đúng trong cả hai trường hợp, và đó cũng là cách hệ XAUUSD làm.
+        thì đúng trong cả hai trường hợp, và đó cũng là cách một hệ một-tài-sản làm.
 
         PHA TRƯỚC ĐÓ ĐỌC TỪ ĐĨA, KHÔNG PHẢI TỪ RAM
         ===========================================
@@ -600,7 +600,7 @@ class TradingEngine:
         lần khởi động lại sau đó đều so với pha đã ghi trên đĩa, nên một lần VPS
         reboot vào trưa Chủ Nhật vẫn gửi được email "thức dậy" lúc 21:00.
 
-        Đây là lỗi đã cắn hệ XAUUSD: cờ trong RAM phải sống ~45 giờ liên tục từ
+        Đây là lỗi đã cắn một hệ một-tài-sản: cờ trong RAM phải sống ~45 giờ liên tục từ
         00:00 thứ Bảy tới 21:00 Chủ Nhật, và bất kỳ lần restart nào trong quãng đó
         đều làm mất email thức dậy. Chiều ngược lại không bao giờ hỏng vì lúc thị
         trường đóng, bot đã chạy liên tục suốt phiên thứ Sáu — nên nhìn log vẫn
@@ -707,17 +707,14 @@ class TradingEngine:
         return not st.enabled
 
     # ─────────────────────────────────────────────── bảng spread định kỳ
-    # Ước lượng spread đang dùng trong backtest (pip). Nguồn: bảng công bố của các
-    # broker raw-spread, ghi trong docstring `research/fx_cross_pairs.py`. Đây là
-    # ƯỚC LƯỢNG, và thay nó bằng SỐ ĐO là mục đích của bảng log này.
+    # Spread TRUNG VỊ đo được trên parquet Dukascopy (pip), cho đúng rổ đang giao
+    # dịch. Đây là con số mà backtest dùng làm chi phí, nên bảng log dưới đây so nó
+    # với spread THẬT của broker và cột lệch là thứ đáng đọc.
+    #
+    # Chỉ khai cho rổ THẬT: một bảng phủ hai chục công cụ không giao dịch là hai chục
+    # con số không ai kiểm, và chúng làm cột lệch trông như có dữ liệu.
     SPREAD_ESTIMATE_PIPS = {
-        "EURUSD": 0.3, "GBPUSD": 0.5, "USDJPY": 0.4, "AUDUSD": 0.5,
-        "USDCAD": 0.6, "USDCHF": 0.6, "NZDUSD": 0.8,
-        "EURGBP": 0.9, "EURJPY": 1.0, "GBPJPY": 1.8, "AUDJPY": 1.3,
-        "EURAUD": 1.6, "EURCHF": 1.3, "EURNZD": 2.0, "EURCAD": 1.5,
-        "GBPAUD": 2.0, "GBPNZD": 2.5, "GBPCAD": 1.8, "GBPCHF": 1.6,
-        "AUDNZD": 1.5, "AUDCAD": 1.3, "AUDCHF": 1.4, "NZDCAD": 1.6,
-        "NZDCHF": 1.8, "NZDJPY": 1.5, "CADCHF": 1.5, "CADJPY": 1.4, "CHFJPY": 1.6,
+        "EURUSD": 0.3, "GBPUSD": 0.9, "USDJPY": 0.5,
     }
 
     def _maybe_log_spread(self) -> None:
@@ -852,7 +849,7 @@ class TradingEngine:
         return self._book
 
     def _bar_indexes(self) -> Dict[str, Any]:
-        """Chỉ mục nến của 22 chân, có cache.
+        """Chỉ mục nến của nhiều chân, có cache.
 
         NẶNG: mỗi chân nạp một chuỗi nến. Cache theo cùng nhịp dựng kế hoạch — chỉ
         mục nến chỉ đổi khi có nến mới đóng, và trong một giờ thì cùng lắm vài nến.
@@ -920,7 +917,7 @@ class TradingEngine:
             _log_incident("email đóng lệnh", exc)
 
     def _build_plan(self) -> None:
-        """Một chu kỳ đầy đủ: mục tiêu 27 chân → kế hoạch → (tuỳ chọn) gửi lệnh."""
+        """Một chu kỳ đầy đủ: mục tiêu nhiều chân → kế hoạch → (tuỳ chọn) gửi lệnh."""
         import MetaTrader5 as mt5
 
         from src.python.execution import order_plan as OP
@@ -952,7 +949,7 @@ class TradingEngine:
         # được gọi ở đâu — lớp bảo vệ chỉ có trên giấy. Đây là chỗ nối nó.
         #
         # Đo trên SỔ mà `fx_data.load_m1()` vừa ghi khi `live_targets()` nạp nến cho
-        # 27 chân, nên không thêm một lần đọc dữ liệu nào. Ngưỡng và lý do chọn:
+        # nhiều chân, nên không thêm một lần đọc dữ liệu nào. Ngưỡng và lý do chọn:
         # `mt5_bars.STALE_MAX_AGE_H`.
         #
         # Đi qua `extra_blocks` (không phải `return` sớm): cổng chặn lệnh TĂNG phơi
@@ -962,6 +959,35 @@ class TradingEngine:
         from src.python.shared import mt5_bars as _MB
 
         extra_blocks: List[str] = []
+
+        # ── CỔNG SPREAD và CỔNG TIN.
+        #
+        # Cả hai đã được TÍNH ở `_read_guards()` từ lâu và ghi vào `state["guards"]`,
+        # nhưng chưa bên nào truyền chúng vào `order_plan` — nghĩa là chúng chỉ hiện
+        # trên console và KHÔNG chặn được lệnh nào. Một cổng chỉ hiển thị là một cổng
+        # không tồn tại; đây là chỗ nối chúng vào đường quyết định.
+        #
+        # Đọc từ `state["guards"]` chứ không tính lại: tính hai lần là hai kết quả
+        # có thể khác nhau, và khi đó console và cổng nói hai chuyện.
+        guards = self.state.get("guards") or {}
+        gsp = guards.get("spread") or {}
+        over = gsp.get("over") or {}
+        if over:
+            worst = max(over.items(), key=lambda kv: kv[1])
+            extra_blocks.append(
+                f"SPREAD VƯỢT TRẦN: {len(over)} công cụ trên "
+                f"{gsp.get('cap_bps', 0):.1f} bps (tệ nhất {worst[0]} "
+                f"{worst[1]:.2f} bps) — chi phí vào lệnh lúc này lớn hơn mô hình")
+        gnews = guards.get("news") or {}
+        if gnews.get("blocked"):
+            extra_blocks.append(
+                f"CỔNG TIN CHẶN — {str(gnews.get('reason') or '')[:120]}")
+        elif str(gnews.get("source") or "") == "ERROR":
+            # Không đánh giá được lịch tin KHÔNG được hiểu là "không có tin".
+            extra_blocks.append(
+                f"không đánh giá được cổng tin ({str(gnews.get('reason'))[:80]}) "
+                f"— fail-closed")
+
         try:
             stale = _MB.stale_symbols()
         except Exception as exc:
@@ -1054,7 +1080,7 @@ class TradingEngine:
     def update_mt5_status(self) -> None:
         """Làm mới toàn bộ trạng thái. Giao diện gọi trên luồng riêng lúc khởi động.
 
-        Tên giữ nguyên như hệ XAUUSD vì `gui_command_center` được kế thừa nguyên vẹn
+        Tên giữ nguyên như một hệ một-tài-sản vì `gui_command_center` được kế thừa nguyên vẹn
         và gọi đúng tên này — đổi tên ở đây là phải sửa GUI, mà GUI thì không sửa.
         """
         self._read_broker()
@@ -1071,7 +1097,7 @@ class TradingEngine:
                 self.log(f"KHÔNG cập nhật được giao diện: {type(exc).__name__}")
 
 
-    # Ngưỡng phút mất kết nối trước khi gửi email. Bằng hệ XAUUSD.
+    # Ngưỡng phút mất kết nối trước khi gửi email. Bằng một hệ một-tài-sản.
     DISCONNECT_ALERT_MIN = 5.0
 
     def _on_mt5_lost(self) -> None:
@@ -1177,7 +1203,7 @@ class TradingEngine:
                     ok = mt5.initialize(login=LOGIN, password=PASSWORD,
                                         server=SERVER, **kw)
                     # DỰ PHÒNG `mt5.login()` — mượn từ `mt5_bridge.init_mt5()` của
-                    # hệ XAUUSD. `initialize(login=…)` thất bại khi terminal vừa mở
+                    # một hệ một-tài-sản. `initialize(login=…)` thất bại khi terminal vừa mở
                     # và chưa nối xong tới server: nó trả -6 AUTHORIZATION_FAILED
                     # dù thông tin đăng nhập ĐÚNG. Gọi `login()` trên phiên đã gắn
                     # được thì qua, vì lúc đó terminal đã sẵn sàng.
@@ -1280,7 +1306,7 @@ class TradingEngine:
             # `symbol_select` là BẮT BUỘC trước lần đọc đầu: symbol không nằm trong
             # Market Watch thì `symbol_info` trả bid/ask = 0. Và phải CHỌN HẾT trước
             # rồi mới ĐỌC — chọn xong đọc ngay thì terminal chưa kịp nạp tick đầu tiên
-            # và 20 cross biến mất khỏi bảng spread mà không có lỗi nào. Tách hai vòng
+            # và rổ cặp chéo biến mất khỏi bảng spread mà không có lỗi nào. Tách hai vòng
             # cho terminal thời gian nạp trong lúc ta còn đang chọn các symbol sau.
             if not self._selected.issuperset(syms):
                 with MT5_API_LOCK:

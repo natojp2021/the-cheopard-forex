@@ -14,7 +14,7 @@ Bảng kết quả của họ nói rõ trình tự sụp đổ:
     Net (đủ chi phí, có swap)          Sharpe −0,456   <- CHẾT
 Tức spread và commission KHÔNG phải thứ giết chiến lược; **swap mới là**.
 
-`currency_reversal` giữ vị thế **21 ngày** = ~21 đêm swap mỗi chu kỳ. Cho đến trước
+chân sinh tín hiệu theo đồng tiền giữ vị thế **21 ngày** = ~21 đêm swap mỗi chu kỳ. Cho đến trước
 module này, backtest chỉ tính spread + commission — đúng cột "Sharpe 0,216" của Carver,
 tức đúng cái cột trông vẫn ổn ngay trước khi sụp.
 

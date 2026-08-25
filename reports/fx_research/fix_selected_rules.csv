@@ -1,2 +1,0 @@
-rule,dev_n,dev_net_bps,dev_t,dev_sharpe,oos_n,oos_net_bps,oos_sharpe
-EURUSD|FFT|h09|usd-1|me3,140,2.391,2.01,1.01,90,-1.843,-1.34

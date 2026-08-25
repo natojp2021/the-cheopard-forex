@@ -76,7 +76,7 @@ def _git_info() -> dict:
         return {"version": "", "commit": None, "branch": None}
     date_time = _git("show", "-s", "--format=%cd", "--date=format:%Y.%m.%d_%H:%M:%S", "HEAD") or "0.0.0"
     branch = _git("rev-parse", "--abbrev-ref", "HEAD")
-    # Định dạng GIỮ NGUYÊN của hệ XAUUSD: `v<ngày giờ commit>+<hash>`. Không hậu tố.
+    # Định dạng GIỮ NGUYÊN của một hệ một-tài-sản: `v<ngày giờ commit>+<hash>`. Không hậu tố.
     #
     # Bản 14/08 có thêm `-dirty@HH:MM` lấy từ mtime tệp `.py` mới nhất, để phân biệt
     # "đã sửa code chưa commit" với bản đã commit. Bỏ 15/08: thứ nó định chữa —

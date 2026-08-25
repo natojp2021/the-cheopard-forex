@@ -2,13 +2,13 @@
 
 KẾ THỪA BỐ CỤC TỪ THE CHEOPARD, ĐỔI GIÁ TRỊ SANG FOREX
 =======================================================
-Giữ nguyên tên và vai trò từng hằng số của `core/config.py` bản XAUUSD, để toàn bộ
+Giữ nguyên tên và vai trò từng hằng số qua các phiên bản, để toàn bộ
 hạ tầng kế thừa (`entry_pipeline`, `order_state_machine`, `position_execution_service`,
 `gui_command_center`…) chạy được mà không phải sửa một dòng nào.
 
 Cái ĐỔI là giá trị và đơn vị — và đó là chỗ nguy hiểm nhất khi port một hệ giao dịch:
 
-    SYMBOL      "XAUUSD" (một tài sản)  →  danh sách công cụ sinh từ registry
+    SYMBOL      một tài sản  ->  danh sách công cụ sinh từ registry
     SPREAD_CAP  1,00 USD trên vàng      →  3,0 BPS. Con số 1,00 trên EURUSD ở 1,10
                                             là 9.090 bps — trần đó không bao giờ chặn.
     ATR_MIN     1,50 USD                →  BỎ HẲN. Ngưỡng ATR tuyệt đối của vàng lớn
@@ -45,7 +45,7 @@ load_env_file()
 # BẪY LỖI TOÀN CỤC — cài NGAY SAU khi nạp `.env`, TRƯỚC mọi thứ khác.
 #
 # ⚠️ THIẾU TỪ ĐẦU, BỔ SUNG 15/08/2026.
-# `utils/exception_handler.py` được port sang từ hệ XAUUSD nhưng KHÔNG AI GỌI —
+# `utils/exception_handler.py` tồn tại nhưng KHÔNG AI GỌI —
 # 245 dòng bảo vệ nằm im, và mỗi lần đọc mã nguồn lại tưởng là đã có. Bên đó gọi
 # ở đúng vị trí này (`core/config.py`, ngay sau `load_env_file()`).
 #
@@ -91,7 +91,7 @@ SERVER = os.getenv("MT5_SERVER", "")
 MT5_PATH = os.getenv("MT5_PATH", "")
 
 # APP_ENV=PROD mới gửi email thật; giá trị khác chỉ ghi log. Giữ nguyên quy ước của
-# The Cheopard để cùng một tệp .env dùng được cho cả hai hệ.
+# giữ nguyên để cùng một tệp .env dùng được qua các phiên bản.
 APP_ENV = os.getenv("APP_ENV", "DEV").strip().upper()
 IS_PROD = APP_ENV == "PROD"
 
@@ -156,7 +156,7 @@ API_KEYS = {
 LOOP_SECONDS = float(os.getenv("LOOP_SECONDS", "5"))
 
 # ═══════════════════════════════════════════════════════ công cụ giao dịch
-# KHÔNG có `SYMBOL` số ít như bản XAU. Hệ này đa công cụ, và danh sách sinh từ
+# KHÔNG có `SYMBOL` số ít như bản một-tài-sản. Hệ này đa công cụ, và danh sách sinh từ
 # registry — thêm chiến lược là công cụ của nó tự vào đây.
 SYMBOLS: Tuple[str, ...] = tuple(sorted({s for g in _sr.live() for s in g.symbols}))
 
@@ -178,7 +178,7 @@ STRAT_STATE_FILES: Dict[str, Path] = {
 SPREAD_CAP_BPS: float = 3.0
 SPREAD_CAP: float = SPREAD_CAP_BPS          # tên cũ cho hạ tầng kế thừa
 
-# ⚠️ `ATR_MIN` / `ATR_MAX` của bản XAU (1,50 và 12,0 USD) CỐ Ý KHÔNG CÓ ở đây.
+# ⚠️ `ATR_MIN` / `ATR_MAX` của bản một-tài-sản (1,50 và 12,0 USD) CỐ Ý KHÔNG CÓ ở đây.
 # Ngưỡng biến động tuyệt đối không port được sang FX: ATR H1 của EURUSD cỡ 0,0015 —
 # nhỏ hơn 1,50 khoảng một nghìn lần, nên cổng đó lọc sạch 100% tín hiệu mà không báo
 # lỗi nào. Nếu cần cổng biến động trên FX thì phải dùng ATR/GIÁ theo phân vị trượt,
@@ -196,7 +196,7 @@ INP_DD_WARN_PCT = float(os.getenv("DD_WARN_PCT", "6.0"))
 INP_KILL_SWITCH_DD_PCT = float(os.getenv("KILL_SWITCH_DD_PCT", "8.0"))
 
 # Trần khối lượng mỗi lệnh. Hệ này chạy 14 chiến lược trên 6 công cụ, nên trần phải
-# tính cho TỔNG chứ không cho từng lệnh — `execution/portfolio_sizing` lo phần đó.
+# tính cho TỔNG chứ không cho từng lệnh — `execution/risk_sizing` lo phần đó.
 # Con số ở đây là chốt chặn cuối cùng chống lỗi tính lot.
 INP_MAX_LOT_PER_ORDER = float(os.getenv("MAX_LOT_PER_ORDER", "2.0"))
 

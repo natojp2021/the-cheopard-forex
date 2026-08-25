@@ -2,7 +2,7 @@
 
 VÌ SAO CÓ TỆP NÀY
 =================
-`gui_command_center.py` được KẾ THỪA nguyên vẹn từ hệ XAUUSD — 1.875 dòng dựng giao
+`gui_command_center.py` được KẾ THỪA nguyên vẹn từ một hệ một-tài-sản — 1.875 dòng dựng giao
 diện đã chạy ổn định. Nó đọc chiến lược qua ba thứ:
 
     _strategy_registry.live()   danh sách chiến lược đang chạy
@@ -37,29 +37,19 @@ from typing import Dict, List, Optional, Tuple
 
 from src.python.strategies import registry as _REG
 
-# Dải magic dành cho hệ Forex. Cố ý KHÔNG trùng dải của hệ XAUUSD (2607xx) để nếu
+# Dải magic dành cho hệ Forex. Cố ý KHÔNG trùng dải của một hệ một-tài-sản (2607xx) để nếu
 # hai hệ vô tình cùng chạy trên một tài khoản thì lệnh của chúng vẫn phân biệt được.
 MAGIC_BASE = 5100000
 
 
-def _magic_of(name: str) -> int:
-    """Magic tất định từ tên chiến lược. Cùng tên → cùng số, mọi lúc, mọi máy."""
-    h = hashlib.sha1(name.encode("utf-8")).hexdigest()
-    return MAGIC_BASE + int(h[:8], 16) % 100_000
-
-
 # Tiền tố ngắn cho từng HỌ tín hiệu. Nhãn dựng theo mẫu `<HỌ>-<CẶP>-<KHUNG>`.
 _FAMILY_PREFIX = (
-    ("ZBand", "ZB"),
-    ("VolRegime", "VOLR"),
-    ("RsiDiv", "RSID"),
-    ("Streak", "STRK"),
-    ("Accel", "ACC"),
+    ("AsiaSweep", "SWEEP"),
 )
 _TIMEFRAMES = ("M30", "H1", "H4", "D1")
 
 
-def _tag_of(name: str) -> str:
+def _tag_of(name: str, symbol: str = "") -> str:
     """Nhãn ngắn hiện trên thẻ GUI. Ưu tiên đọc được hơn là ngắn tuyệt đối.
 
     ⚠️ NHÃN PHẢI DUY NHẤT — xem `_assert_tags_unique`.
@@ -75,21 +65,15 @@ def _tag_of(name: str) -> str:
     Nay mọi họ đều tách `<HỌ>-<CẶP>-<KHUNG>` như ZBand vẫn làm — vừa duy nhất, vừa
     đọc được cặp và khung mà không phải tra tên đầy đủ.
     """
-    special = {
-        "CurrencyReversal": "CCY-REV", "CurrencyCarry": "CCY-CARRY",
-        "CrossMeanReversion": "X-MR-H1", "CrossMomentum": "X-MOM-D1",
-        "CrossXsReversion": "X-XS-H4",
-    }
-    if name in special:
-        return special[name]
     for family, prefix in _FAMILY_PREFIX:
         if not name.startswith(family):
             continue
         rest = name[len(family):]
         for tf in _TIMEFRAMES:
             if rest.endswith(tf):
-                return f"{prefix}-{rest[:-len(tf)]}-{tf}"
-    return name[:12].upper()
+                mid = rest[:-len(tf)] or symbol
+                return f"{prefix}-{mid}-{tf}"
+    return f"{name[:12].upper()}-{symbol}" if symbol else name[:12].upper()
 
 
 _CATEGORY = {"M30": "Intraday", "H1": "Day", "H4": "Swing", "D1": "Position"}
@@ -117,17 +101,31 @@ class GuiSpec:
     regimes_allowed = None
 
 
-def _to_gui(spec) -> GuiSpec:
+def _to_gui(spec, leg: str = "", symbol: str = "") -> GuiSpec:
+    """Một hàng GUI. `leg` là KHOÁ CHÂN — nó quyết định `magic`, không phải tên chiến lược.
+
+    MỘT NGUỒN MAGIC DUY NHẤT: `order_router.magic_for(leg)`. Trước đây module này tự
+    băm tên chiến lược (`% 100_000`) trong khi bộ gửi lệnh băm tên CHÂN
+    (`% 90_000`) — hai lược đồ khác nhau, nên bảng vận hành không bao giờ khớp được
+    với vị thế thật: mọi hàng đều báo "không có lệnh" dù broker đang giữ vị thế.
+
+    Và một chiến lược chạy NHIỀU công cụ thì mỗi công cụ là một CHÂN riêng, một hàng
+    riêng — nếu không thì ba lệnh trộn vào một hàng và không ai đọc được chân nào
+    đang mở.
+    """
+    from src.python.execution.order_router import magic_for
+
     fam = spec.hypothesis.split(".")[0].strip()
     if len(fam) > 62:
         fam = fam[:59] + "…"
+    sym = symbol or (spec.symbols[0] if spec.symbols else "")
     return GuiSpec(
-        name=spec.name,
-        gui_tag=_tag_of(spec.name),
+        name=leg or spec.name,
+        gui_tag=_tag_of(spec.name, sym),
         gui_desc=f"{_CATEGORY.get(spec.signal_tf, 'Day')} · {spec.signal_tf} · {fam}",
-        magic=_magic_of(spec.name),
-        symbol=spec.symbols[0] if spec.symbols else "",
-        symbols=tuple(spec.symbols),
+        magic=magic_for(leg or spec.name),
+        symbol=sym,
+        symbols=(sym,) if sym else tuple(spec.symbols),
         stage=spec.stage,
         signal_tf=spec.signal_tf,
         execution_tf=spec.execution_tf,
@@ -138,7 +136,25 @@ def _to_gui(spec) -> GuiSpec:
 
 
 def all_specs() -> List[GuiSpec]:
-    specs = [_to_gui(s) for s in _REG.STRATEGIES]
+    """Một hàng cho mỗi CHÂN. Khoá chân lấy từ `portfolio.SINGLE_LEGS` (SSOT).
+
+    Chiến lược một-công-cụ không khai bảng chân thì lùi về một hàng cho mỗi chiến
+    lược — nhưng khi đó `magic` vẫn tính từ cùng một hàm, nên bảng vẫn khớp vị thế.
+    """
+    from src.python.strategies import portfolio as PF
+
+    legs = getattr(PF, "SINGLE_LEGS", {}) or {}
+    inst = getattr(PF, "LEG_INSTRUMENT", {}) or {}
+    specs: List[GuiSpec] = []
+    if legs:
+        for leg, strat_name in legs.items():
+            try:
+                spec = _REG.by_name(strat_name)
+            except KeyError:
+                continue
+            specs.append(_to_gui(spec, leg=leg, symbol=inst.get(leg, "")))
+    else:
+        specs = [_to_gui(s) for s in _REG.STRATEGIES]
     _assert_tags_unique(specs)
     return specs
 
@@ -149,7 +165,7 @@ def _assert_tags_unique(specs: List[GuiSpec]) -> None:
     Giao diện lấy nhãn làm KHOÁ (`matrix_rows[tag]`), nên nhãn trùng không gây lỗi
     — nó lặng lẽ nuốt một chiến lược: hàng vẫn được vẽ nhưng không bao giờ được
     cập nhật, và đứng nguyên "—" giữa bảng. Người vận hành nhìn 27 hàng và tưởng
-    đang theo dõi 27 chân, trong khi hai chân không hề được báo cáo trạng thái.
+    đang theo dõi nhiều chân, trong khi hai chân không hề được báo cáo trạng thái.
     Đã xảy ra 15/08/2026 với `RSIDIVNZDCAD` và `VOLREGIMEGBP`.
 
     Fail-closed ngay ở nguồn: nhãn là dữ liệu SINH RA, nên chỗ duy nhất bắt được

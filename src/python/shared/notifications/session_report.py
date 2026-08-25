@@ -1,4 +1,4 @@
-"""Báo cáo TỔNG KẾT PHIÊN — CLONE `email_reporter.send_session_report` hệ XAUUSD.
+"""Báo cáo TỔNG KẾT PHIÊN — CLONE `email_reporter.send_session_report` một hệ một-tài-sản.
 
 VÌ SAO CẦN
 ===========

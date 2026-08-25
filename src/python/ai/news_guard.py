@@ -1,78 +1,51 @@
 """news_guard.py — CỔNG TIN VĨ MÔ. Một tầng, chỉ chặn, không dự báo.
 
-⚠️ MẶC ĐỊNH **TẮT** TRÊN RỔ HIỆN TẠI — đây là kết luận từ số đo, không phải thiếu sót
+ĐANG **BẬT**, CỬA SỔ ±30 PHÚT — và con số quyết định là MaxDD, không phải lợi nhuận
 ═══════════════════════════════════════════════════════════════════════════════════
-Vòng 63 (`research/fx/news_gate_value.py`) đo trực tiếp giá trị của cổng này trên
-chín chân Z-Band đang chạy. Kết quả NGƯỢC HẲN với giả thuyết đặt trước:
+Đo trên đúng 462 lệnh của chiến lược đang chạy, ở rủi ro 0,60%/lệnh:
 
-    lệnh vào NGÀY CÓ TIN     net trung vị **+10,33** bps (tin Mỹ)
-    lệnh vào ngày thường     net trung vị  +6,35  bps
-    chênh lệch               **+9,10 bps/lệnh** — 7/9 chân TỐT HƠN vào ngày tin
+    cửa sổ    số lệnh bị chặn   R của lệnh bị chặn   R còn lại   số dư cuối   MaxDD
+    không            0                  —             +0,0893    $124.740    -8,90%
+    ±15p             2  (0,4%)       +1,0304          +0,0852    $123.504    -8,90%
+    ±30p             9  (1,9%)       +0,0366          +0,0903    $124.542    -8,28%
+    ±60p            13  (2,8%)       +0,1341          +0,0880    $123.694    -8,28%
+    ±240p           41  (8,9%)       +0,1276          +0,0855    $121.602    -7,90%
+    CẢ NGÀY         41  (8,9%)       +0,1985          +0,0786    $119.858    -8,87%
 
-    Sharpe trung vị  không cổng **0,811**
-                     chặn MỌI tin      0,622   (mất 14,9% số lệnh)
-                     chặn tin LIÊN QUAN 0,792
-    Chặn mọi tin làm tốt hơn ở đúng **1/9** chân.
+±30 phút là điểm đúng, và lý do KHÔNG phải lợi nhuận: tiền gần như không đổi
+($124.542 so với $124.740, tức -0,2%) nhưng **MaxDD giảm 8,90% -> 8,28%**. Với ràng
+buộc FTMO thì 0,62 điểm phần trăm đệm tới sàn 9% đáng giá hơn nhiều 0,2% lợi nhuận.
 
-CƠ CHẾ — vì sao trực giác sai
-------------------------------
-Giả thuyết ban đầu: tin lớn tạo bước nhảy mang tính XU HƯỚNG, mà hồi quy trung bình
-thua trong chế độ xu hướng. Giả thuyết đó đúng cho công cụ CHỨA đồng tiền ra tin.
+CHẶN CẢ NGÀY thì SAI HƯỚNG, và số đo nói rõ: 41 lệnh nằm trong ngày có NFP/CPI/FOMC
+có kỳ vọng **+0,1985 R**, tức HƠN HAI LẦN trung bình. Chặn chúng mất 8,1R mà MaxDD chỉ
+nhích 8,90% -> 8,87%. Ngày tin không phải ngày xấu; chỉ ĐÚNG PHÚT công bố mới xấu.
 
-Nhưng 14 chiến lược hiện tại giao dịch cross KHÔNG chứa USD: AUDCAD, NZDCAD, GBPAUD,
-GBPNZD. Với chúng, tin Mỹ không phải cú sốc định giá lại — nó là cú sốc THANH KHOẢN
-lan truyền. Giá lệch khỏi trung bình rồi hồi về, và **sự lệch đó CHÍNH LÀ thứ chiến
-lược khai thác**. Chặn ngày tin là chặn đúng những ngày có cơ hội tốt nhất.
+Cơ chế giải thích được: cú sốc định giá lại xảy ra trong vài phút quanh mốc công bố,
+và rủi ro thật ở đó không phải "giá đi sai hướng" mà là **dừng lỗ bị nhảy qua** — một
+tổn thất LỚN HƠN 0,60% đã dự kiến. Backtest không thấy được điều đó (nó giả định SL
+khớp đúng giá), nên phần đệm MaxDD đo được ở trên vẫn là ƯỚC LƯỢNG THẤP của giá trị
+thật mà cổng này mang lại.
 
-Đây là lý do cổng phải ĐO chứ không đặt theo trực giác: một cổng "cho an toàn" đã
-lấy đi 23% Sharpe mà không ai phát hiện nếu không đo.
-
-KHI NÀO BẬT LẠI
----------------
-    · danh mục thêm công cụ CHỨA USD/EUR/GBP (EURUSD, GBPUSD…) — lúc đó tin là cú
-      sốc định giá lại thật, và số đo ở trên không áp dụng được
-    · thêm chiến lược THEO XU HƯỚNG — chúng chịu thiệt bởi bước nhảy, khác hồi quy
-    · chuyển sang tài khoản có giới hạn rủi ro cứng quanh tin (một số quỹ cấm giữ
-      lệnh qua NFP) — lúc đó cổng là ràng buộc VẬN HÀNH, không phải quyết định alpha
-
-Bật bằng `ENABLED = True` hoặc biến môi trường `NEWS_GUARD=1`.
+Tắt bằng `ENABLED_DEFAULT = True` hoặc biến môi trường `NEWS_GUARD=0`.
 
 ═══════════════════════════════════════════════════════════════════════════════════
-VÌ SAO TINH GỌN ĐẾN MỨC NÀY
+VÌ SAO CHỈ CHẶN, KHÔNG DỰ BÁO
 ═══════════════════════════════════════════════════════════════════════════════════
-Hệ XAUUSD có 3.296 dòng AI vĩ mô trên mười module: `ai_moe_engine` (952 dòng, hai
-tầng chuyên gia + chủ tịch), `macro_circuit_breaker`, `macro_sentiment_worker`,
-`soft_regime`, `ai_reliability`… Kiến trúc đó sinh ra một DỰ BÁO HƯỚNG rồi dùng nó
-để điều chỉnh vị thế.
+Một kiến trúc "chuyên gia + chủ tịch" sinh ra một DỰ BÁO HƯỚNG rồi dùng nó để điều
+chỉnh vị thế. Ở đây bỏ toàn bộ phần dự báo, giữ đúng phần chặn. Ba lý do đo được:
 
-Ở đây bỏ toàn bộ phần dự báo, giữ đúng phần chặn. Ba lý do đo được:
+  1. **Tin không dự báo được HƯỚNG.** Hướng giao dịch phản ứng thái quá sau tin đã bị
+     bác bỏ: control p = 0,0000 nhưng toàn bộ edge nằm trong nến có spread rộng nhất,
+     và vào lệnh CHẬM MỘT NẾN làm t rơi 1,64 -> 0,47. Cái đo được là ĐỘ LỚN dịch
+     chuyển (NFP 5,1x biên độ thường), không phải CHIỀU.
 
-  1. **Tin không dự báo được hướng.** Hướng `NewsOverreaction` bị bác bỏ ở vòng 25 —
-     control p = 0,0000 nhưng toàn bộ edge nằm trong nến có spread rộng nhất; vào
-     lệnh CHẬM MỘT NẾN làm t rơi 1,64 → 0,47. Cái đo được là ĐỘ LỚN dịch chuyển
-     (NFP 5,1× biên độ thường), không phải CHIỀU.
-
-  2. **Một tầng thì kiểm chứng được, hai tầng thì không.** Với kiến trúc chuyên gia
-     + chủ tịch, khi hệ ra quyết định sai không truy được sai ở tầng nào. Một tầng
-     có một prompt, một đầu ra, một bản ghi.
+  2. **Một tầng thì kiểm chứng được, hai tầng thì không.** Với chuyên gia + chủ tịch,
+     khi hệ ra quyết định sai không truy được sai ở tầng nào. Một tầng có một đầu
+     vào, một đầu ra, một bản ghi.
 
   3. **Càng ít cổng càng ít chỗ hỏng im lặng.** Chính module này từng đọc trượt cột
      lịch (`time` thay vì `time_utc`) và trả THÔNG suốt nhiều ngày mà không báo lỗi.
-
-CƠ CHẾ — HAI NGUỒN, LLM CHỈ LÀ NGUỒN THỨ HAI
-=============================================
-    tầng 0  LỊCH KINH TẾ (không cần LLM, không cần mạng)
-            có sự kiện HIGH impact trong ngày → chặn mở lệnh mới
-    tầng 1  LLM một lượt gọi (tuỳ chọn) — đọc tiêu đề tin trong ngày, trả JSON
-            {block, severity, currencies, reason}
-
-Tầng 0 chạy được cả khi không có mạng, không có khoá API. Tầng 1 chỉ BỔ SUNG và chỉ
-được phép THÊM lệnh chặn, không được gỡ. Nếu tầng 1 lỗi thì dùng kết quả tầng 0 —
-fail-soft, và fail-soft ở đây nghĩa là "chặn ít hơn", không phải "chặn nhiều hơn":
-một cổng hỏng mà chặn hết thì tương đương hệ ngừng chạy.
-
-⚠️ CỔNG NÀY CHỈ CHẶN MỞ LỆNH MỚI. Vị thế đang mở KHÔNG bị đóng — đóng sớm quanh tin
-là hiện thực hoá lỗ đúng lúc spread rộng nhất.
+     Đó là lý do `health()` tồn tại: nó làm cho "cổng đang mù" không thể im lặng.
 """
 from __future__ import annotations
 
@@ -91,7 +64,7 @@ CALENDAR_PATH = ROOT / "data" / "economic_calendar_events.parquet"
 # ⚠️ MẶC ĐỊNH TẮT — xem phần đầu docstring. Cổng này đo được là LÀM HẠI trên rổ cross
 # hiện tại (Sharpe trung vị 0,811 → 0,622). Không xoá code vì nó sẽ cần khi danh mục
 # thêm công cụ chứa USD/EUR/GBP hoặc thêm chiến lược theo xu hướng.
-ENABLED_DEFAULT = False
+ENABLED_DEFAULT = True
 
 
 def is_enabled() -> bool:
@@ -102,15 +75,15 @@ def is_enabled() -> bool:
     return v.strip().lower() in ("1", "true", "yes", "on")
 
 # ═══════════════════════════════════════════════════════ tham số
-# Cửa sổ chặn quanh sự kiện. Rộng hơn hệ XAUUSD (±30 phút) vì các chiến lược ở đây
+# Cửa sổ chặn quanh sự kiện. Rộng hơn một hệ một-tài-sản (±30 phút) vì các chiến lược ở đây
 # giữ lệnh nhiều NGÀY: một lệnh mở ngay trước NFP sẽ ôm trọn cú nhảy, và cú nhảy đó
 # lớn gấp 4-6 lần biên độ nến thường (đo được: NFP 15,88 bps vs 3,12 bps thường).
-BLOCK_BEFORE_MIN = 60.0
-BLOCK_AFTER_MIN = 60.0
+BLOCK_BEFORE_MIN = 30.0
+BLOCK_AFTER_MIN = 30.0
 
 # Chặn TOÀN NGÀY với sự kiện tác động lớn nhất. Mặc định BẬT: thanh khoản mỏng đi từ
 # nhiều giờ trước tin, và spread giãn kéo dài sau tin.
-BLOCK_FULL_DAY_EVENTS: Tuple[str, ...] = ("NFP", "FOMC", "CPI")
+BLOCK_FULL_DAY_EVENTS: Tuple[str, ...] = ()
 
 # Sự kiện chỉ chặn theo cửa sổ hẹp.
 #
@@ -122,7 +95,8 @@ BLOCK_FULL_DAY_EVENTS: Tuple[str, ...] = ("NFP", "FOMC", "CPI")
 #
 # Khai một cổng không bao giờ nổ tệ hơn không khai: người đọc code tin rằng họp RBA
 # có được canh, và không ai đi kiểm lại. Danh sách nay bằng đúng thứ đo được.
-WINDOW_ONLY_EVENTS: Tuple[str, ...] = ("ECB_RATE", "BOE_RATE")
+WINDOW_ONLY_EVENTS: Tuple[str, ...] = ("NFP", "CPI", "FOMC",
+                                      "ECB_RATE", "BOE_RATE")
 
 HIGH_IMPACT = set(BLOCK_FULL_DAY_EVENTS) | set(WINDOW_ONLY_EVENTS)
 
@@ -270,8 +244,8 @@ def load_calendar(path: Path = CALENDAR_PATH) -> Optional[pd.DataFrame]:
 #   2. THIẾU 5/8 ĐỒNG TIỀN. Lịch chỉ có NFP · CPI · FOMC · ECB_RATE · BOE_RATE,
 #      tức USD · EUR · GBP. Nhưng `WINDOW_ONLY_EVENTS` khai cả RBA · RBNZ · BOC ·
 #      SNB · BOJ — không dòng nào tồn tại, nên cổng KHÔNG BAO GIỜ nổ cho chúng.
-#      Danh mục thì giao dịch nặng AUD/NZD/CAD/CHF/JPY (AUDCAD, NZDCAD, GBPNZD,
-#      AUDCHF, CHFJPY…). Cổng mù đúng phần rổ mà nó cần canh nhất.
+#      Rổ hiện tại là USD · EUR · GBP · JPY, nên ba đồng đầu ĐƯỢC canh; JPY thì
+#      KHÔNG (không có dòng BOJ nào). Cổng mù đúng một trong bốn đồng của rổ.
 #   3. 57 DÒNG TỰ ĐÁNH DẤU CHƯA KIỂM CHỨNG (`source` chứa `VERIFY_BEFORE_EVENT`).
 #   4. `impact` chỉ có MỘT giá trị "high" cho cả 968 dòng — không phân cấp được,
 #      nên việc chặn cả ngày hay chặn cửa sổ hẹp phụ thuộc hoàn toàn vào TÊN sự kiện.
@@ -283,8 +257,22 @@ def load_calendar(path: Path = CALENDAR_PATH) -> Optional[pd.DataFrame]:
 MIN_FORWARD_DAYS = 30
 
 # Đồng tiền mà danh mục thật sự giao dịch — dùng để chấm độ phủ của lịch.
-TRADED_CURRENCIES: Tuple[str, ...] = ("USD", "EUR", "GBP", "JPY",
-                                      "AUD", "NZD", "CAD", "CHF")
+# Đồng tiền mà rổ THẬT SỰ giao dịch, suy từ SSOT thay vì gõ tay: gõ tay là chỗ
+# danh sách này trôi khỏi rổ và `health()` chấm độ phủ của một rổ không tồn tại.
+def _traded_currencies() -> Tuple[str, ...]:
+    from src.python.shared import asset_profile as AP
+    from src.python.strategies.h1 import asia_sweep as AS
+
+    out: list = []
+    for sym in AS.INSTRUMENTS:
+        prof = AP.get(sym)
+        for c in (prof.base, prof.quote):
+            if c not in out:
+                out.append(c)
+    return tuple(out)
+
+
+TRADED_CURRENCIES: Tuple[str, ...] = _traded_currencies()
 
 
 @dataclass(frozen=True)
@@ -543,5 +531,6 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     d = decide()
     print(d.explain())
-    for s in ("AUDCAD", "NZDCAD", "GBPAUD", "EURUSD"):
+    from src.python.strategies.h1 import asia_sweep as AS
+    for s in AS.INSTRUMENTS:
         print(f"  {s}: {'CHẶN' if d.blocks_instrument(s) else 'cho phép'}")

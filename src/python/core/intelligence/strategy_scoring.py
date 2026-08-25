@@ -8,7 +8,7 @@ là `None`, và dòng ngay sau đó:
 
     enabled = (lifecycle not in ("PAUSED", "RETIRED", "RESEARCH")) if lifecycle else True
 
-cho `enabled = True` cho MỌI chân. Đo được: **27/27 chân luôn bật**. Không có đường
+cho `enabled = True` cho MỌI chân. Đo được: **27/nhiều chân luôn bật**. Không có đường
 nào tạm dừng một chân lúc đang chạy — muốn tắt phải sửa `registry.py` rồi khởi động
 lại, tức phải đụng vào SSOT của chiến lược để làm một việc VẬN HÀNH.
 
@@ -24,7 +24,7 @@ lịch sử của nó.
 VÌ SAO KHÔNG CHẤM ĐIỂM TỰ ĐỘNG
 ===============================
 Hệ XAUUSD có `strategy_scoring` chấm điểm và `allocation_policy` tự đổi vòng đời
-theo điểm. Hệ này CỐ Ý không port phần đó: 27 chân đang ở `FORWARD_TEST`, mẫu live
+theo điểm. Hệ này CỐ Ý không port phần đó: nhiều chân đang ở `FORWARD_TEST`, mẫu live
 chưa đủ dài để một luật tự động có ý nghĩa thống kê, và một luật tự tắt chân dựa
 trên vài chục lệnh chính là cách chọn đỉnh nhiễu. Khi nào có mẫu đủ dài thì thêm
 tầng chấm điểm ĐỌC module này, đừng viết đè lên nó.

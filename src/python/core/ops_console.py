@@ -73,7 +73,7 @@ _MARKUP = re.compile(r"\[/?[^\]]*\]")
 class _Squelch:
     """Nén các dòng log chỉ khác nhau ở con số.
 
-    Dấu vân tay = nội dung đã xoá hết chữ số. Dòng `spread VƯỢT trần 3.0 bps: AUDCAD
+    Dấu vân tay = nội dung đã xoá hết chữ số. Dòng `spread VƯỢT trần 3.0 bps: <cặp>
     7.0, AUDCHF 8.85, …` và chính nó năm giây sau cho ra CÙNG một vân tay, nên dòng
     thứ hai bị nén — kể cả khi không ai sửa điểm ghi log sinh ra nó.
 
@@ -306,7 +306,7 @@ class OpsConsole:
         ops_log.emit("market", "regime_change", previous=prev, current=label)
 
     def _strategy_changes(self) -> None:
-        """Chân nào ĐỔI quyết định thì nói; 27 chân đứng yên thì im.
+        """Chân nào ĐỔI quyết định thì nói; chân đứng yên thì im.
 
         VÌ SAO KHÔNG IN LẠI CẢ BẢNG
         ============================
@@ -339,7 +339,7 @@ class OpsConsole:
                        strategy=name, previous=prev, decision=now_dec)
 
     def strategy_table(self, state: Optional[Dict[str, Any]] = None) -> None:
-        """Bảng 27 chân, in ĐÚNG MỘT LẦN lúc khởi động.
+        """Bảng các chân, in ĐÚNG MỘT LẦN lúc khởi động.
 
         Sau dòng này console không in lại bảng nữa — thay đổi đi qua
         `_strategy_changes()`, và số đếm gọn nằm trong nhịp tim.
@@ -519,7 +519,7 @@ class OpsConsole:
                         f"[{color}]{_escape(value)}[/]")
         # DÒNG QUAN TRỌNG NHẤT của cả báo cáo: tắt bảng điều khiển KHÔNG đóng lệnh.
         # Người vận hành phải biết mình vừa để lại cái gì trên thị trường mà từ giờ
-        # không còn ai quản lý trailing/BE/time-stop.
+        # không còn ai quản lý vị thế đang mở.
         if open_pos:
             self._print(f"  [{T.C_RED}]!! {open_pos} vị thế VẪN MỞ và từ giờ KHÔNG "
                         f"CÓ hệ nào quản lý — đóng bằng tay hoặc chạy lại bot.[/]")

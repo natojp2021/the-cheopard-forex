@@ -2,14 +2,12 @@
 
 VÌ SAO KHÔNG DÙNG `core/infra/mt5_bridge.py`
 ============================================
-Bridge 900 dòng kế thừa từ hệ XAUUSD giải một bài toán khác: MỘT tài sản, MỘT lệnh
-một lần, mỗi lệnh có dừng lỗ riêng và cỡ lệnh suy từ khoảng cách tới dừng lỗ đó. Hệ
-này tái cân bằng CẢ SỔ theo lịch, 27 chân trên 28 công cụ, không chân nào có dừng lỗ
-chiến lược. Ép mô hình per-trade vào đây là chỗ sinh ra "vênh" mà đợt kiểm toán
-14/08/2026 đang đi tìm.
+`mt5_bridge` là đường THỦ CÔNG: nút đóng tay, đóng nửa, flatten all, halt. Nó xử lý
+MỘT lệnh một lần theo yêu cầu của người vận hành.
 
-Ngoài ra bridge đó hiện KHÔNG import được (tham chiếu năm module không tồn tại), nên
-"sửa nó" thực chất là viết lại — và viết lại theo đúng mô hình thì rẻ hơn.
+Module này là đường TỰ ĐỘNG: nó nhận một KẾ HOẠCH cho cả sổ và gửi phần chênh lệch.
+Hai đường tách biệt CÓ CHỦ Ý — gộp chúng nghĩa là một lần bấm tay có thể đi qua logic
+tái cân bằng, và một lượt tái cân bằng có thể đi qua logic bấm tay.
 
 BỐN BẤT BIẾN — mỗi cái đều có test khoá lại
 ============================================
@@ -35,7 +33,8 @@ BỐN BẤT BIẾN — mỗi cái đều có test khoá lại
   2. **ĐẢO CHIỀU là HAI lệnh.** Đóng vị thế cũ, rồi mở vị thế mới ngược chiều. Gộp
      thành một lệnh khối lượng gấp đôi là hành vi của broker netting; MT5 hedging
      sẽ mở thêm một vị thế thứ hai thay vì đảo, và sổ lệch ngay từ lệnh đầu.
-  3. **Cầu chì ĐI KÈM lệnh mở.** `sl` nằm trong chính `order_send`, không đặt sau
+  3. **DỪNG LỖ VÀ CHỐT LỜI ĐI KÈM lệnh mở.** `sl` và `tp` nằm trong chính
+     `order_send`, không đặt sau
      bằng một lệnh `modify` thứ hai. Giữa hai lệnh đó là một khoảng thời gian vị thế
      nằm TRẦN, và nếu tiến trình chết đúng lúc ấy thì nó nằm trần mãi mãi — đúng lỗ
      hổng mà `disaster_stop` sinh ra để bịt.
@@ -95,7 +94,7 @@ from src.python.utils.logger import log, log_error
 # giá vô lý khi sổ lệnh mỏng.
 DEVIATION_POINTS = 20
 
-# Magic number của hệ Forex. Cố ý KHÁC dải 2607xx của hệ XAUUSD để hai bot chạy
+# Magic number của hệ. Cố ý nằm trong một dải RIÊNG để hai bot chạy
 # chung một tài khoản vẫn phân biệt được vị thế của ai — và để `position_book` không
 # nhận nhầm vị thế của hệ kia là MỒ CÔI.
 MAGIC_BASE = 5100000
@@ -123,7 +122,7 @@ class SendResult:
     # KHÔNG sổ nào ghi. Lý do nó quan trọng với đúng hệ này: mọi số Sharpe trong
     # repo đều là SAU chi phí, và spread là lớp lớn nhất — bỏ sót một lớp đã từng
     # đảo dấu kết luận (Sharpe +0,216 sau spread+commission nhưng −0,456 sau swap).
-    # Backtest dùng spread ƯỚC LƯỢNG cho 20 cross tổng hợp; chỉ khi ghi spread
+    # Backtest có thể dùng spread ƯỚC LƯỢNG; chỉ khi ghi spread
     # THẬT ở từng lệnh mới biết ước lượng ấy sai bao nhiêu, và sai theo hướng nào.
     #
     # Không đo được thì để `None`, KHÔNG điền 0.0: 0.0 nghĩa là "spread bằng
@@ -189,7 +188,7 @@ class RouteResult:
 def magic_for(leg: str) -> int:
     """Magic number tất định cho một chân. Cùng chân luôn cho cùng số.
 
-    Suy từ tên chứ không gán tay: 27 chân gán tay là 27 cơ hội gán trùng, và magic
+    Suy từ tên chứ không gán tay: mỗi lần gán tay là một cơ hội gán trùng, và magic
     trùng nghĩa là hai chân nhận nhầm vị thế của nhau.
     """
     h = int(hashlib.sha1(leg.encode("utf-8")).hexdigest()[:6], 16)
@@ -370,14 +369,14 @@ def _build_now() -> str:
 def _timeframe_of(symbol: str) -> str:
     """Khung tín hiệu của các chân đang nhắm vào `symbol`, ghép bằng dấu gạch chéo.
 
-    Một công cụ có thể do nhiều chân ở nhiều khung cùng giữ — AUDCAD có M30, H1
+    Một công cụ có thể do nhiều chân ở nhiều khung cùng giữ
     và H4 — nên trường này không quy về một khung được. Ghi đủ đúng hơn chọn bừa.
     """
     try:
         from src.python.strategies import registry as REG
 
         # So khớp qua REGISTRY chứ không qua chuỗi khoá chân: khoá chân viết
-        # thường (`zb_audcad_h1`) còn symbol viết hoa (`AUDCAD`), nên phép
+        # thường còn symbol viết hoa, nên phép
         # `symbol in k` của bản trước KHÔNG BAO GIỜ đúng và hai ô "khung tín
         # hiệu"/"chân" luôn trống. Registry giữ `symbols` chuẩn hoá sẵn.
         tfs = sorted({s.signal_tf for s in REG.STRATEGIES
@@ -390,7 +389,7 @@ def _timeframe_of(symbol: str) -> str:
 def _legs_of(symbol: str) -> str:
     """Tên các CHÂN đang nhắm vào `symbol`, ghép bằng dấu cộng.
 
-    Một công cụ có thể do nhiều chân cùng giữ — AUDCAD có ba — nên trường "chiến
+    Một công cụ có thể do nhiều chân cùng giữ, nên trường "chiến
     lược" của thư không quy về một tên được. Ghi đủ cả ba đúng hơn là chọn bừa một.
     """
     try:
@@ -449,12 +448,13 @@ class OrderRouter:
     # ─────────────────────────────────────────────── gửi một lệnh
     def _send_one(self, *, symbol: str, action: str, side: str, lots: float,
                   stop_price: Optional[float], bar_utc: str,
+                  take_profit: Optional[float] = None,
                   leg: str = "", reason: str = "") -> SendResult:
         """`reason` là LÝ DO nghiệp vụ của lệnh, đi vào `comment` gửi broker.
 
         Thêm 15/08/2026. Trước đó `comment` chỉ mang tên HÀNH ĐỘNG (`OPEN`,
         `CLOSE`), nên nhìn lịch sử lệnh trên MT5 không biết được vì sao đóng —
-        time-stop, tín hiệu ngược chiều, hay cầu chì đều hiện một chữ "CLOSE".
+        mốc đóng phiên, dừng lỗ, hay chốt lời đều hiện một chữ "CLOSE".
         Cùng lỗ hổng ấy làm bảng lý-do-đóng của vòng backtest 2026 chỉ có một
         dòng, che mất 113 lệnh (16,8%) thật ra chạm time-stop.
         """
@@ -520,7 +520,7 @@ class OrderRouter:
             ask = float(getattr(tick, "ask", 0.0) or 0.0)
             price = ask if is_buy else bid
             # SPREAD ĐO TẠI CHỖ, không lấy từ cấu hình: bảng ước lượng trong
-            # `fx_cross_pairs` là ƯỚC LƯỢNG cho 20 cross tổng hợp, và mục đích ghi
+            # Spread backtest có thể là ƯỚC LƯỢNG, và mục đích ghi
             # số này là để biết ước lượng ấy lệch bao nhiêu so với broker thật.
             spread_price = (ask - bid) if (ask > 0 and bid > 0) else None
             spread_bps = (spread_price / price * 1e4
@@ -536,9 +536,16 @@ class OrderRouter:
                 "comment": (f"CHEO-FX {reason or action}")[:31],
                 "type_time": mt5.ORDER_TIME_GTC,
             }
-            # Cầu chì đi CÙNG lệnh mở — xem bất biến 3 ở đầu file.
+            # Dừng lỗ đi CÙNG lệnh mở — xem bất biến 3 ở đầu file.
             if stop_price:
                 req["sl"] = float(stop_price)
+            # CHỐT LỜI cũng đi CÙNG lệnh mở, và vì đúng một lý do: backtest thoát ở
+            # mức TP đó. Gửi lệnh mà không gửi `tp` nghĩa là live KHÔNG có lối thoát
+            # thắng nào — vị thế chỉ đóng khi bị dừng lỗ quét hoặc khi tới mốc đóng
+            # phiên. Trên chuỗi 462 lệnh đo được, chốt lời là lối thoát của 47,8% số
+            # lệnh; bỏ nó là bỏ toàn bộ phần lãi và giữ nguyên phần lỗ.
+            if take_profit:
+                req["tp"] = float(take_profit)
             short = _margin_shortfall(mt5, req, action)
             if short:
                 return SendResult(symbol=symbol, action=action, side=side,
@@ -647,7 +654,7 @@ class OrderRouter:
         Giữ khoá của một lệnh chưa từng tồn tại là tự chặn chính mình: mọi lần
         thử lại cho CÙNG nến sẽ bị coi là trùng, dù không có vị thế nào. Với chân
         H4 đó là mất 4 giờ; với hai chân D1 là mất trọn chu kỳ tái cân bằng 21
-        ngày. Đây đúng lỗi mà `release_rejected_order` bên hệ XAUUSD sinh ra để
+        ngày. Đây đúng lỗi mà `release_rejected_order` bên một hệ một-tài-sản sinh ra để
         sửa (ghi trong docstring của nó, 21/07).
 
         Hợp đồng của `release_rejected_order`: phải chuyển sang một trạng thái
@@ -774,6 +781,17 @@ class OrderRouter:
             reason=("" if not errors else "; ".join(errors)[:200]))
 
     # ─────────────────────────────────────────────── gửi cả kế hoạch
+    @staticmethod
+    def _pick_take_profit(action) -> Optional[float]:
+        """Mức chốt lời gửi broker. Chiến lược khai MỘT mức, server giữ MỘT mức.
+
+        Bỏ trống (`None`) thì lệnh đi mà KHÔNG có chốt lời — chấp nhận được cho chiến
+        lược không khai TP, nhưng với chiến lược CÓ khai thì đó là mất lối thoát
+        thắng, nên `order_plan` phải luôn điền trường này.
+        """
+        tp = getattr(action, "take_profit", None)
+        return float(tp) if tp and float(tp) > 0 else None
+
     def route(self, plan, *, bar_utc: Optional[str] = None,
               log_decisions: bool = True) -> RouteResult:
         """Gửi mọi việc trong `plan`. Trả kết quả từng lệnh, không ném lỗi."""
@@ -799,6 +817,7 @@ class OrderRouter:
                     out.sent.append(self._send_one(
                         symbol=a.symbol, action="REVERSE_OPEN", side=a.side,
                         lots=abs(a.target_lots), stop_price=a.stop_price,
+                        take_profit=self._pick_take_profit(a),
                         bar_utc=stamp, reason=a.reason))
                 else:
                     # Nửa ĐÓNG đã đi qua, nửa MỞ bị giữ lại → phơi nhiễm GIẢM.
@@ -815,12 +834,15 @@ class OrderRouter:
                     reason=f"CHẶN — {out.blocked_reason}"))
                 continue
 
-            # Lệnh ĐÓNG hoặc GIẢM không mang cầu chì: cầu chì thuộc về vị thế còn
-            # lại, và gửi kèm `sl` vào một lệnh đóng là cách broker từ chối cả lệnh.
-            stop = a.stop_price if a.action in ("OPEN", "INCREASE") else None
+            # Lệnh ĐÓNG hoặc GIẢM không mang dừng lỗ/chốt lời: hai mức đó thuộc về
+            # vị thế CÒN LẠI, và gửi kèm `sl`/`tp` vào một lệnh đóng là cách broker
+            # từ chối cả lệnh.
+            opening = a.action in ("OPEN", "INCREASE")
             out.sent.append(self._send_one(
                 symbol=a.symbol, action=a.action, side=a.side, lots=a.lots,
-                stop_price=stop, bar_utc=stamp, reason=a.reason))
+                stop_price=(a.stop_price if opening else None),
+                take_profit=(self._pick_take_profit(a) if opening else None),
+                bar_utc=stamp, reason=a.reason))
 
         for a in plan.actions:
             if a.action == "HOLD" and a.reason:

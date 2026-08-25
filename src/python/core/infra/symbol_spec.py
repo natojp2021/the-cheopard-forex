@@ -138,7 +138,7 @@ def resolve(symbol: str, mt5_module=None) -> SymbolSpec:
 
 # ═══════════════════════════════════════════════════════ API cho tầng đặt lệnh
 # `mt5_bridge` gọi `get_symbol_spec(symbol)` và `symbol_spec.invalidate()`. Hai tên
-# này đến từ hệ XAUUSD; giữ nguyên để module đặt lệnh kế thừa chạy không phải sửa.
+# này đến từ một hệ một-tài-sản; giữ nguyên để module đặt lệnh kế thừa chạy không phải sửa.
 _cache: Dict[str, SymbolSpec] = {}
 
 

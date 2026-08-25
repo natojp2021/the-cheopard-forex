@@ -4,8 +4,9 @@ VÌ SAO MODULE NÀY PHẢI TỒN TẠI
 ===============================
 `decision_log.py` lo việc GHI. Module này lo việc **quyết định cần ghi những gì**.
 
-Trước module này chỉ có `cross_mean_reversion` phát ra bản ghi đầy đủ; ba chân còn
-lại (`currency_reversal`, `currency_carry`, `cross_momentum`) chỉ ghi được một dòng
+Một chiến lược có thể bỏ một setup ở nhiều bước khác nhau. Không ghi lại BƯỚC nào
+đã chặn thì khi live lệch khỏi backtest chỉ thấy "ít lệnh hơn dự kiến" và không lần
+ra được vì sao. Bản ghi runtime tồn tại để trả lời đúng câu đó, và nó chỉ ghi một dòng
 tổng hợp kiểu "đã tái cân bằng, đây là tỷ trọng". Dòng đó KHÔNG trả lời được câu
 hỏi vận hành quan trọng nhất:
 

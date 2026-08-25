@@ -73,12 +73,12 @@ from src.python.utils.logger import log, log_error
 ACCOUNT_SIZE = 100_000.0
 ACCOUNT_TYPE = "SWING"              # đòn bẩy tài khoản 1:30
 # Vì sao SWING chứ không Standard, dù Standard có đòn bẩy cao gấp ba (forex 1:100
-# so 1:30): danh mục 27 chân chạy trên M30/H1/H4/D1 và GIỮ LỆNH QUA ĐÊM cũng như
+# so 1:30): danh mục nhiều chân chạy trên M30/H1/H4/D1 và GIỮ LỆNH QUA ĐÊM cũng như
 # QUA CUỐI TUẦN ở mọi chân — time-stop ngắn nhất là 12 nến H4 (2 ngày), dài nhất
 # là tái cân bằng 21 ngày của hai chân D1. Standard hạn chế giữ lệnh qua tin và
 # qua cuối tuần trên tài khoản funded, tức nó cấm đúng thứ mọi chân đang làm.
-# (Ví dụ SwingDon/TomXau ở đây trước 14/08/2026 là chiến lược của hệ XAUUSD, không
-#  tồn tại trong repo này — đã thay bằng thời gian giữ lệnh thật của 27 chân.)
+# (Ví dụ SwingDon/TomXau ở đây trước 14/08/2026 là chiến lược của một hệ một-tài-sản, không
+#  tồn tại trong repo này — đã thay bằng thời gian giữ lệnh thật của nhiều chân.)
 #
 # Đòn bẩy KHÔNG phải ràng buộc của hệ này. Danh mục hai chân chạy phơi nhiễm gộp
 # ~0,9 đơn vị rủi ro với biến động 3,2%/năm; ràng buộc thật là DRAWDOWN, không phải
@@ -462,7 +462,7 @@ def buffer_k(st: Optional[Dict[str, Any]] = None) -> float:
 #   còn $291 thay vì $425 vì hai vị thế SwingDon đã lấp trần, trong khi mọi lệnh
 #   THUA đứng một mình đều được cấp đủ. Hệ cấp vốn NGƯỢC.
 #
-# Ở HỆ FOREX lập luận trên KHÔNG áp dụng nguyên: 27 chân không có dừng lỗ theo
+# Ở HỆ FOREX lập luận trên KHÔNG áp dụng nguyên: nhiều chân không có dừng lỗ theo
 # giá, nên "rủi ro mở" không đo được bằng tổng khoảng cách tới SL. Đại lượng thay
 # thế là tổn thất một ngày ở phân vị xấu — xem `portfolio_sizing.open_risk_estimate`,
 # và ràng buộc thật sự chặn là trần đòn bẩy 3,7x trong `ftmo_leverage_policy`.

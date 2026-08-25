@@ -1,57 +1,45 @@
-"""position_book.py — SỔ VỊ THẾ BỀN VỮNG: chân nào đang giữ gì, và giữ được bao lâu.
+"""position_book.py — SỔ VỊ THẾ BỀN VỮNG. Ai đang giữ cái gì, và có khớp broker không.
 
-LỖ HỔNG MÀ MODULE NÀY BỊT — NGHIÊM TRỌNG NHẤT TÌM ĐƯỢC TRONG ĐỢT KIỂM TOÁN
-===========================================================================
-Cả 27 chân thoát lệnh bằng ĐÚNG HAI cách: tín hiệu ngược chiều, và **time-stop**.
-Không chân nào có dừng lỗ theo giá (đo được là làm tệ đi — `research/fx/sl_test.py`).
-Nghĩa là time-stop không phải một lớp phụ; với phần lớn lệnh nó là lối thoát DUY NHẤT.
+VÌ SAO SỔ GHI THEO CHÂN, CÒN BROKER GHI THEO CÔNG CỤ
+=====================================================
+Một chiến lược chạy nhiều công cụ thì mỗi công cụ là một CHÂN riêng, và mỗi chân có
+`magic` riêng. Broker thì chỉ biết vị thế theo CÔNG CỤ. Hai cách ghi khác nhau, nên
+phải có một chỗ giữ ánh xạ và một chỗ đối soát.
 
-Time-stop cần `bars_held`. Trước 14/08/2026, `bars_held` **không có ai tính**:
+Thiếu sổ thì không trả lời được: vị thế EURUSD kia là của hệ hay do người vận hành mở
+tay? Nó thuộc chân nào? Mở từ nến nào? Không có câu trả lời thì mọi phép tính phơi
+nhiễm và mọi quyết định đóng đều đặt trên một con số không kiểm chứng được.
 
-    live_decision(start, bars_held=0)     ← mọi nơi gọi đều truyền 0
-    portfolio.single_leg_decisions()      ← nhận `bars_held` nhưng không ai đưa vào
-    (không module nào sinh ra giá trị này)
-
-Hậu quả nếu chạy thật: mỗi chu kỳ, chân đang giữ lệnh nhận `bars_held = 0`, nên
-điều kiện `bars_held >= timestop` KHÔNG BAO GIỜ đúng, và **vị thế được giữ vô hạn**.
-Với chân H4 time-stop 12 nến (2 ngày) thì đó là một vị thế lẽ ra đóng sau hai ngày
-nhưng nằm lại nhiều tuần. Không có exception, không có test đỏ — đúng lớp lỗi im
-lặng đã tìm thấy ba lần trong đợt này.
-
-Bot khởi động lại còn tệ hơn: kể cả có tính `bars_held` trong RAM thì restart cũng
-xoá sạch. Vì vậy sổ này phải BỀN VỮNG trên đĩa, ghi bằng
-`state_store.save_json_atomic` (temp → flush → fsync → replace), pattern học từ
-`xaubot-ai` qua hệ XAUUSD.
-
-ĐẾM NẾN, KHÔNG ĐẾM GIỜ ĐỒNG HỒ
-===============================
-`bars_held` phải là SỐ NẾN ĐÃ ĐÓNG kể từ nến vào lệnh, không phải số giờ trôi qua.
-Hai thứ khác nhau ở mọi cuối tuần và mọi ngày lễ: từ 17:00 thứ Sáu tới 09:00 thứ Hai
-là 64 giờ đồng hồ nhưng **0 nến**. Quy đổi bằng giờ sẽ đóng lệnh sớm hai ngày mỗi
-tuần, và đóng sai thời điểm là lệch hẳn khỏi hành vi mà backtest đã đo.
-
-Nên `bars_held()` nhận chính chỉ mục nến của công cụ đó — cùng nguồn dữ liệu mà
-backtest dùng. Đó là điều kiện để live và backtest cùng đếm một kiểu.
-
-ĐỐI SOÁT — BA NHÓM, KHÔNG PHẢI HAI
+BỀN VỮNG TRÊN ĐĨA, KHÔNG TRONG RAM
 ===================================
-So sổ với vị thế thật trên broker cho ba nhóm, và cả ba đều phải xử lý khác nhau:
+Khởi động lại tiến trình KHÔNG được làm sổ trống. Sổ trống nghĩa là mọi vị thế thật
+thành "mồ côi", và hệ sẽ hoặc bỏ mặc chúng, hoặc mở trùng lên chúng.
 
-    KHỚP     sổ có, broker có       → bình thường
-    MỒ CÔI   broker có, sổ KHÔNG    → vị thế lạ: người mở tay, hoặc sổ đã mất.
-                                      KHÔNG được tự đóng (có thể là lệnh của hệ
-                                      khác trên cùng tài khoản), KHÔNG được coi là
-                                      của mình. Chặn vào lệnh mới cho tới khi người
-                                      vận hành quyết định.
-    ĐÃ ĐÓNG  sổ có, broker KHÔNG    → lệnh đã đóng lúc bot không chạy (SL thảm hoạ
-                                      nổ, hoặc đóng tay). Ghi nhận và xoá khỏi sổ.
+ĐỐI SOÁT PHẢI XONG TRƯỚC KHI VÀO LỆNH
+======================================
+`reconcile()` so sổ với `positions_get()` của broker và trả kết quả cho `entry_gate`.
+Chưa đối soát xong thì cổng CHẶN — chưa biết vị thế nào là của hệ thì mọi phép tính
+phơi nhiễm còn vô nghĩa.
 
-Nhóm MỒ CÔI là lý do `reconciliation_done` tồn tại trong `entry_gate`: chừng nào còn
-vị thế không rõ chủ, mọi phép tính phơi nhiễm đều thiếu, và cấp thêm rủi ro lên trên
-một con số đã sai là cách mất tài khoản. Hệ XAUUSD học đúng bài này trong
-`core/execution/reconciliation.py` (533 dòng, giao thức 5 bước); bản ở đây rút gọn
-cho mô hình danh mục nhưng giữ nguyên bất biến: **không đối soát xong thì không vào
-lệnh mới**.
+SỔ GHI Ý ĐỊNH THÌ SỔ SẼ NÓI DỐI — LỖI ĐÃ TỪNG XẢY RA
+=====================================================
+Khi broker TỪ CHỐI một lệnh mà sổ vẫn ghi vị thế (vì sổ ghi theo Ý ĐỊNH chứ theo KẾT
+QUẢ), hậu quả không dừng ở một dòng sai:
+
+  * `open()` từ chối mở lại chân đã có trong sổ, nên chân đó KHÔNG THỂ thử lại chừng
+    nào bóng ma còn nằm đó.
+  * `sides()` báo chân đang giữ lệnh, nên các phép cộng phơi nhiễm sai theo.
+
+`reconcile()` chu kỳ sau dọn được, nhưng giữa hai thời điểm đó hệ ra quyết định trên
+một thế giới không có thật — và với sổ vị thế thì "sai rồi tự sửa" không phải thiết kế
+chấp nhận được. Nên `sync_from_targets()` nhận `failed_symbols` và KHÔNG ghi gì cho
+những công cụ broker đã từ chối.
+
+⚠️ ĐỒNG HỒ `bars_held` KHÔNG CÒN ĐIỀU KHIỂN GÌ
+==============================================
+Nó được giữ vì nó là dữ liệu chẩn đoán tốt (giữ bao lâu trước khi thoát), nhưng chiến
+lược hiện tại KHÔNG thoát theo số nến — nó thoát bằng dừng lỗ/chốt lời trên server và
+bằng mốc đóng phiên. Đừng nối lại một lối thoát theo `bars_held` mà không đo trước.
 """
 from __future__ import annotations
 
@@ -213,7 +201,7 @@ class PositionBook:
 
         BROKER LÀ SỰ THẬT, VÀ MỘT CÔNG CỤ LỆCH KHÔNG ĐƯỢC KHOÁ CẢ DANH MỤC
         ================================================================
-        Sự cố 21/08/2026: sổ ghi NZDCAD −1.0 còn broker giữ −0.81 (đóng một phần
+        Lệch lot đã từng xảy ra: sổ ghi −1.0 còn broker giữ −0.81 (đóng một phần
         ngoài hệ). `ReconcileResult.ok` đòi `lot_mismatch` rỗng, nên 0.19 lot lệch
         trên MỘT công cụ làm `reconciliation_done` False và cổng chặn TOÀN BỘ lệnh
         mới của 27 công cụ — liên tục từ 14:08 tới 21:00, không một lệnh nào.
@@ -222,7 +210,7 @@ class PositionBook:
         mất: broker là sự thật, giữ lại chỉ làm chân đó vĩnh viễn không vào lệnh
         được. Lệch lot cùng một họ, chỉ khác mức độ.
 
-        Cân theo TỶ LỆ khi nhiều chân cùng giữ một công cụ (AUDCAD có ba chân):
+        Cân theo TỶ LỆ khi nhiều chân cùng giữ một công cụ:
         không có cách nào biết chân nào bị đóng bớt, nên chia đều theo tỷ trọng
         đang giữ. Sai số phân bổ giữa các chân nhỏ hơn hẳn cái giá của việc khoá
         cả danh mục.
@@ -469,9 +457,9 @@ def sync_from_targets(book: "PositionBook", targets, prices: Dict[str, float],
 
     VÌ SAO ĐỒNG BỘ TỪ Ý ĐỊNH CHỨ KHÔNG TỪ FILL CỦA BROKER
     ======================================================
-    Sổ ghi theo CHÂN, còn broker giữ vị thế theo CÔNG CỤ. AUDCAD có ba chân cùng
-    nhắm vào nó, và `order_plan` gộp chúng thành MỘT lệnh ròng — nên một vị thế
-    broker không quy ngược ra được chân nào. Chiều đúng của từng chân chỉ có ở
+    Sổ ghi theo CHÂN, còn broker giữ vị thế theo CÔNG CỤ. Nhiều chân có thể cùng
+    nhắm vào một công cụ, và `order_plan` gộp chúng thành MỘT lệnh ròng — nên một vị
+    thế broker không quy ngược ra được chân nào. Chiều đúng của từng chân chỉ có ở
     `targets.single_decisions`, và `reconcile()` so hai bên ở mức CÔNG CỤ
     (`symbol_lots()` tự cộng các chân lại) nên hai cách ghi vẫn khớp nhau.
 
@@ -501,9 +489,14 @@ def sync_from_targets(book: "PositionBook", targets, prices: Dict[str, float],
         spec = REG.by_name(name) if name else None
         if spec is None or not spec.symbols:
             continue
-        meta[leg] = (spec.symbols[0], spec.signal_tf)
+        # CÔNG CỤ lấy từ `LEG_INSTRUMENT`, KHÔNG từ `spec.symbols[0]`: một chiến lược
+        # chạy nhiều công cụ thì `symbols[0]` luôn là công cụ đầu tiên, nên cả ba chân
+        # sẽ cùng ghi vị thế lên một cặp. Chỉ lùi về `spec.symbols[0]` cho chân
+        # một-công-cụ không khai bảng tra.
+        symbol = (getattr(PF, "LEG_INSTRUMENT", {}).get(leg) or spec.symbols[0])
+        meta[leg] = (symbol, spec.signal_tf)
         if side != 0:
-            per_symbol[spec.symbols[0]] = per_symbol.get(spec.symbols[0], 0) + 1
+            per_symbol[symbol] = per_symbol.get(symbol, 0) + 1
 
     asof = str(getattr(targets, "asof", "") or "")
     failed = {str(s) for s in (failed_symbols or ())}
@@ -518,7 +511,7 @@ def sync_from_targets(book: "PositionBook", targets, prices: Dict[str, float],
             # BROKER TỪ CHỐI THÌ SỔ KHÔNG ĐƯỢC ĐỔI.
             #
             # Đo 19:14 ngày 20/08/2026: 27 lệnh bị từ chối `retcode=10027`
-            # (AutoTrading tắt ở terminal), vậy mà sổ vẫn ghi ba chân AUDCAD BUY
+            # (AutoTrading tắt ở terminal), vậy mà sổ vẫn ghi các chân BUY
             # 0,16 lot với `ticket=0` trong khi broker có ĐÚNG 0 vị thế. Sổ ghi
             # theo Ý ĐỊNH, không theo kết quả.
             #
@@ -572,8 +565,12 @@ def bar_indexes_for(legs: Iterable[str], start: str = "2020-01-01"
             continue
         target = REG.PORTFOLIO["entry_points"][name]
         mod = import_module(target.partition(":")[0])
+        sym = getattr(PF, "LEG_INSTRUMENT", {}).get(leg)
         try:
-            out[leg] = mod._load(start).df.index
+            loaded = mod._load(sym) if sym else mod._load(start)
+            # `_load` trả DataFrame (nến) hoặc một object có `.df` — chấp cả hai để
+            # không buộc mọi chiến lược phải cùng một kiểu trả về.
+            out[leg] = getattr(loaded, "df", loaded).index
         except Exception:                                  # pragma: no cover
             continue
     return out

@@ -74,9 +74,16 @@ def test_prime_symbols_reports_pending_and_never_raises(monkeypatch):
 
     ready, pending = B._prime_symbols()
 
-    assert len(calls["select"]) >= 27, "không chọn đủ 27 công cụ"
+    # Rổ lấy từ SSOT, không gõ lại một con số: thêm/bớt công cụ là test tự theo.
+    from src.python.strategies import portfolio as PF
+    want = set(PF.LEG_INSTRUMENT.values())
+    got = set(calls["select"])
+    assert got >= want, (
+        f"thiếu công cụ trong `symbol_select`: {sorted(want - got)}")
     assert pending == ["EURUSD"], pending
-    assert ready >= 26
+    # Số công cụ SẴN SÀNG = rổ trừ đúng cái không có lịch sử. Neo vào rổ thật thay
+    # vì một con số cứng — con số cứng là chỗ test nói dối khi rổ đổi.
+    assert ready == len(got) - 1, (ready, sorted(got))
     assert any("EURUSD" in m for m in msgs), "không nêu tên công cụ thiếu lịch sử"
     assert any("PARQUET" in m for m in msgs), "không nói HẬU QUẢ"
 

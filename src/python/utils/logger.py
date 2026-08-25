@@ -1,6 +1,6 @@
 """logger.py — logging cho The Cheopard Forex.
 
-VIẾT LẠI 13/08/2026. Bản cũ (182 dòng) là tầng log của hệ XAUUSD: nó bơm mọi dòng
+VIẾT LẠI 13/08/2026. Bản cũ (182 dòng) là tầng log của một hệ một-tài-sản: nó bơm mọi dòng
 sang `timeline_log` để dựng dòng thời gian sự kiện cho GUI command center, và bám
 vào một cây thư mục state runtime theo tài khoản. Cả hai thứ đó đã bị xoá cùng
 engine cũ, nên module chỉ còn lại một import gãy.
@@ -165,7 +165,7 @@ def _make_file_handler() -> Optional[logging.Handler]:
     # `test_min_lots_per_symbol_20260821`. Bộ soát log theo giờ đọc chúng như sự
     # cố THẬT của tài khoản, và người đọc log sau này cũng vậy.
     #
-    # Cùng họ với ba lỗ rò đã bịt ở hệ XAU (`trade_journal`,
+    # Cùng họ với ba lỗ rò đã bịt ở một hệ một-tài-sản (`trade_journal`,
     # `allocation_policy`, `durable_event_log`) và với `position_book` ở chính
     # repo này: trạng thái/hiện vật runtime không có ranh giới giữa test và live.
     import os

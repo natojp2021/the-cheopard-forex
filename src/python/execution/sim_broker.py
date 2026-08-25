@@ -2,7 +2,7 @@
 
 VÌ SAO PHẢI CÓ
 ==============
-Backtest của hệ này (`zband_core.run`, `signal_families.run`) tính lãi lỗ thẳng từ
+Backtest của chiến lược tính lãi lỗ thẳng từ
 mảng giá. Nó KHÔNG đi qua bất kỳ lớp nào của đường vào lệnh thật:
 
     entry_gate · order_plan · position_book · disaster_stop · order_router
@@ -33,7 +33,7 @@ Ba thứ đó chỉ đo được trên tài khoản thật. Bỏ chúng nghĩa l
 ==========
 Broker không tự biết thời gian. Bên gọi `step(i)` để đẩy nó tới nến thứ `i`, và mọi
 truy vấn giá trả về giá TẠI nến đó. Nhờ vậy không có đường nào nhìn thấy dữ liệu
-tương lai — cùng nguyên tắc `VirtualClock` của hệ cũ.
+tương lai.
 """
 from __future__ import annotations
 

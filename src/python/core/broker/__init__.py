@@ -5,8 +5,8 @@
 Repo có hai gói tên `execution` và chúng làm việc khác hẳn nhau:
 
     src/python/execution/       ĐƯỜNG LIVE của hệ Forex — order_plan, order_router,
-                                entry_gate, portfolio_sizing, disaster_stop…
-    src/python/core/execution/  hạ tầng port từ hệ XAUUSD
+                                entry_gate, risk_sizing, disaster_stop…
+    src/python/core/execution/  hạ tầng port từ một hệ một-tài-sản
 
 Hai tên giống nhau ở hai tầng khác nhau là đúng loại nhầm lẫn đã nêu trong
 `shared/__init__.py`: người đọc không biết gói nào là đường ra lệnh thật, và người
@@ -20,7 +20,7 @@ Gói này nay chỉ còn ĐÚNG hai module, và cả hai đều trả lời cùn
     order_state_machine.py  vòng đời một lệnh + khoá idempotent, chống gửi trùng
                             khi tiến trình chết giữa lúc chờ broker trả lời
 
-Ba module còn lại đã bị XOÁ cùng ngày, sau khi đối chiếu với hệ XAUUSD:
+Ba module còn lại đã bị XOÁ cùng ngày, sau khi đối chiếu với một hệ một-tài-sản:
 
     entry_pipeline.py             1.476 dòng — đường vào lệnh của XAU. Hệ Forex đi
                                   qua `execution/order_plan.py`, nên chỉ còn 2 hàm

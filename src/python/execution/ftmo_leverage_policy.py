@@ -64,11 +64,11 @@ Chính sách này KHÔNG dùng mốc 10% của FTMO làm sàn tính toán. Nó d
 
 Lý do là một lỗ hổng đo được ngày 14/08: ba ràng buộc bên dưới đều bó **một ngày
 hoặc một cửa sổ 21 ngày**, không cái nào bó **drawdown TÍCH LUỸ**. Chạy danh mục
-27 chân qua chính sách cũ cho đòn bẩy 4,85x — ngày tệ nhất chỉ −3,85% (an toàn
+nhiều chân qua chính sách cũ cho đòn bẩy 4,85x — ngày tệ nhất chỉ −3,85% (an toàn
 dưới mốc 5%) nhưng **MaxDD đạt −10,74%**, tức chuỗi ngày xấu liên tiếp vượt trần
 tổng trong khi không ngày nào riêng lẻ vi phạm.
 
-Bảng đo trên danh mục 27 chân, 2020-01 → 2026-08:
+Bảng đo trên danh mục nhiều chân, 2020-01 → 2026-08:
 
     đòn bẩy   MaxDD    ngày tệ nhất   lãi/năm
       3,00x    7,74%      −$2.381      +18,1%

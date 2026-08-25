@@ -13,7 +13,7 @@ CÔNG TẮC MÔI TRƯỜNG
 ====================
 Chỉ `APP_ENV=PROD` mới thật sự gửi. Mọi giá trị khác chỉ GHI LOG nội dung thư — nhờ
 vậy chạy thử ở máy phát triển không spam hộp thư, mà vẫn kiểm được nội dung đúng.
-Quy ước này kế thừa nguyên từ hệ XAUUSD.
+Quy ước này kế thừa nguyên từ một hệ một-tài-sản.
 """
 from __future__ import annotations
 

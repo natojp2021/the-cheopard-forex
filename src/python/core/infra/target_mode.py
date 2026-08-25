@@ -84,7 +84,7 @@ def check_portfolio_risk_cap(current_open_risk_usd: float, new_risk_usd: float, 
 #      vị 99,9% chỉ 1,538%, trung vị 0,063%. Vàng gap rộng hơn FX.
 #   2. SAI KHUNG QUY CHIẾU, và đây mới là chỗ chết người. Công thức
 #      `notional <= 5% / gap` giả định TOÀN BỘ notional nằm trên MỘT công cụ —
-#      đúng với hệ XAUUSD một tài sản, vô nghĩa với sổ 27 chân hai chiều.
+#      đúng với một hệ một-tài-sản một tài sản, vô nghĩa với sổ nhiều chân hai chiều.
 #
 # Đo trực tiếp ở mức DANH MỤC cho kết quả ngược hẳn trực giác: thứ Hai là ngày
 # AN TOÀN NHẤT trong tuần, không phải nguy hiểm nhất.
@@ -96,7 +96,7 @@ def check_portfolio_risk_cap(current_open_risk_usd: float, new_risk_usd: float, 
 #     Năm   342     +2,12   12,05    −76,63
 #     Sáu   342     +2,10   10,90    −61,03
 #
-# Lý do: gap đánh cả 27 chân cùng lúc, nhưng chúng nằm hai chiều trên 8 đồng tiền
+# Lý do: gap đánh toàn bộ các chân cùng lúc, nhưng chúng nằm hai chiều trên 8 đồng tiền
 # nên phần lớn cú sốc triệt tiêu nhau. Rủi ro thật nằm ở ngày thị trường đi MỘT
 # CHIỀU kéo dài, không ở cú nhảy qua cuối tuần.
 #

@@ -46,7 +46,7 @@ _FRAME_DESC = {s.gui_tag: s.gui_desc
 # Thứ tự nhóm theo KHUNG THỜI GIAN (M30 -> H1 -> H4 -> D1), không theo thứ tự
 # dispatch. Trong mỗi khung, chiến lược Sharpe cao đứng trước.
 #
-# ĐỔI 14/08/2026 khi chuyển sang Forex: bản XAU khai danh sách này BẰNG TAY và đó
+# ĐỔI 14/08/2026 khi chuyển sang Forex: bản một-tài-sản khai danh sách này BẰNG TAY và đó
 # chính là chỗ nó từng để sót 5 chiến lược đang chạy tiền thật — vòng lặp render bỏ
 # qua tên không có trong `_magic_map` nên chiến lược THIẾU biến mất khỏi bảng vận
 # hành mà không có cảnh báo nào (xem chú thích lịch sử trong git).
@@ -88,7 +88,7 @@ def is_forex_weekend(now_utc=None) -> bool:
 
 
 def get_ai_trend():
-    """THIÊN HƯỚNG RÒNG của danh mục — thay cho sentiment LLM của hệ XAUUSD.
+    """THIÊN HƯỚNG RÒNG của danh mục, quy về phơi nhiễm từng đồng tiền.
 
     Hệ XAU lấy con số này từ phán quyết của MoE Chairman (LLM hai tầng). Hệ Forex bỏ
     kiến trúc đó, và thay bằng thứ ĐO ĐƯỢC: tổng vị thế thật của 14 chiến lược, quy
@@ -146,7 +146,7 @@ def get_system_health(state):
     gmt7 = timezone(timedelta(hours=7))
 
     # ĐÃ GỠ 15/08/2026: MODEL ENGINE · SOFT REGIME · NEWS FEED · HARD REGIME H4 ·
-    # AI TREND. Cả năm tính đầu ra của bộ máy AI vĩ mô hệ XAUUSD, thứ hệ Forex không
+    # AI TREND. Hệ này không
     # có — xem ghi chú ở chỗ dựng thẻ trong `_build_health_card`. Giữ phần TÍNH mà
     # không thẻ nào đọc là giữ code chết trên đường chạy mỗi 5 giây.
     #
@@ -192,7 +192,7 @@ def get_system_health(state):
 # ĐÃ XOÁ 15/08/2026 — `_hard_regime_cache`, `HARD_REGIME_CACHE_S`,
 # `HARD_REGIME_MAX_AGE_S`, `_hard_regime_row()`, `_regime_blocks_strategy()`.
 #
-# Cả khối là CẦU DAO TRẠNG THÁI THỊ TRƯỜNG port từ hệ XAUUSD. Nó dựa vào
+# Cả khối là CẦU DAO TRẠNG THÁI THỊ TRƯỜNG. Nó dựa vào
 # `core.intelligence.regime_engine` và `regime_envelope` — hai module KHÔNG TỒN TẠI
 # ở hệ Forex. Mọi lượt gọi ném `ImportError`, rơi vào `except` và trả `False`.
 #
@@ -206,7 +206,7 @@ def get_system_health(state):
 # tham chiếu cuối cùng để xoá được cả file đó.
 #
 # Hệ Forex đo trạng thái thị trường bằng `core/intelligence/fx_market_state.py`
-# (biến động rổ 20 cross theo phân vị trượt). Muốn dựng lại cầu dao thì dựng trên
+# (biến động rổ theo phân vị trượt). Muốn dựng lại cầu dao thì dựng trên
 # nguồn ấy, và phải đo trước khi bật — xem `registry.REJECTED_DIRECTIONS`.
 
 
@@ -259,7 +259,7 @@ def _current_r(state, magic: int) -> str:
     """Lãi/lỗ ĐANG CHẠY của chân này, tính bằng % equity. "—" khi không có lệnh.
 
     Cột này tên là CUR. R nhưng hệ Forex KHÔNG có R (bội số rủi ro) vì không chân
-    nào đặt SL theo giá — không có mẫu số. Bản XAUUSD có SL từng lệnh nên R có
+    nào đặt SL theo giá — không có mẫu số. Có SL từng lệnh thì R có
     nghĩa; port thẳng tên cột sang đây thì cột hoặc rỗng, hoặc hiện một con số
     không định nghĩa được.
 
@@ -312,7 +312,7 @@ def get_decision_matrix_rows(state):
         # VÒNG ĐỜI đọc từ `strategy_scoring` — công tắc VẬN HÀNH đặt tay, bền vững
         # trên đĩa. Trước 15/08/2026 khối này import `allocation_policy` và
         # `strategy_scoring`, cả hai KHÔNG TỒN TẠI, nên `lifecycle` luôn `None` và
-        # `enabled` luôn `True` cho cả 27 chân — đo được 27/27. Không có đường nào
+        # `enabled` luôn `True` cho MỌI chân. Không có đường nào
         # tạm dừng một chân lúc đang chạy, mà cột LIVE vẫn xanh như thể có.
         lifecycle = strategy_scoring.get_manual_state(canon) if strategy_scoring else None
         enabled = lifecycle not in strategy_scoring.BLOCKING if lifecycle else True

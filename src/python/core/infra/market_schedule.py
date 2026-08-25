@@ -102,7 +102,7 @@ def describe(now_utc: Optional[datetime] = None, *, countdown: bool = True) -> s
 
 
 # ═══════════════════════════════════════════════════════ PHA THỊ TRƯỜNG BỀN VỮNG
-# VẤN ĐỀ (hệ XAUUSD báo 14/08, hệ này mắc y hệt — sửa 15/08/2026):
+# VẤN ĐỀ (một hệ một-tài-sản báo 14/08, hệ này mắc y hệt — sửa 15/08/2026):
 # email "NGỦ ĐÔNG" sáng thứ Bảy tới đều đặn, nhưng email "THỨC DẬY" sáng thứ Hai
 # CHƯA BAO GIỜ tới.
 #

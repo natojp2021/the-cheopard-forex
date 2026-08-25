@@ -287,7 +287,7 @@ def add_core_features(bars_m5, anchor="london"):
     m5["rng_w"]  = m5.rng_hi - m5.rng_lo
     m5.loc[hrs < 12.0, ["rng_hi", "rng_lo", "rng_w"]] = np.nan
 
-    # Biên độ buổi sáng (08:00-13:00 GMT) — đặc trưng của hệ XAUUSD. Hệ Forex
+    # Biên độ buổi sáng (08:00-13:00 GMT) — đặc trưng của một hệ một-tài-sản. Hệ Forex
     # KHÔNG dùng cột này trong bất kỳ chiến lược nào: 63 vòng nghiên cứu cho thấy
     # mọi hướng theo phiên trên FX đều thua chi phí, và vòng 69-70 đo riêng Asian
     # Range Breakout cũng trượt kiểm định (xem `registry.REJECTED_DIRECTIONS`).

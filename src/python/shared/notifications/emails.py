@@ -1,9 +1,9 @@
-"""Bộ email SỰ KIỆN của hệ — CLONE nguyên văn từ `core/engine.py` của hệ XAUUSD.
+"""Bộ email SỰ KIỆN của hệ — CLONE nguyên văn từ `core/engine.py` của một hệ một-tài-sản.
 
 VÌ SAO CLONE CHỨ KHÔNG VIẾT LẠI
 ================================
 Nội dung, tiêu đề, bảng màu và bố cục của bộ thư này đã được người vận hành chỉnh
-và xác thực qua nhiều vòng trên hệ XAUUSD — trên máy thật, với client thật. Viết
+và xác thực qua nhiều vòng trên một hệ một-tài-sản — trên máy thật, với client thật. Viết
 lại "cho gọn" là vứt bỏ toàn bộ vòng kiểm chứng đó và bắt đầu lại từ đầu, ở đúng
 kênh mà lỗi chỉ lộ ra trên hộp thư người đọc chứ không lộ ra ở test.
 
@@ -186,7 +186,7 @@ def startup(*, account: Optional[Dict[str, Any]] = None,
                   ("Build", _version()),
                   # HAI HÀNG THÊM cho hệ Forex: bên XAU một tài khoản chạy 12 chiến
                   # lược trên MỘT tài sản, nên số chân không phải thông tin. Ở đây
-                  # 27 chân trải trên 27 công cụ, và "bao nhiêu chân đang chạy, đang
+                  # nhiều chân trải trên 27 công cụ, và "bao nhiêu chân đang chạy, đang
                   # giữ bao nhiêu vị thế" là câu đầu tiên người vận hành hỏi.
                   ("Chiến lược đang chạy", strategies),
                   ("Vị thế đang mở", positions),
@@ -262,7 +262,7 @@ def reconnected(*, account: Optional[Dict[str, Any]] = None,
         f"<h2 style='color: #17a2b8; margin-top: 0;'>🟢 KHÔI PHỤC KẾT NỐI MT5 THÀNH CÔNG</h2>"
         f"<p>BOT <b>{_bot()}</b> đã kết nối lại thành công với máy chủ <b>MetaTrader 5</b> (<b>{login_id}</b> - {server_name}).</p>"
         f"<p>Hệ thống tự động tiếp tục vòng lặp giám sát vị thế thời gian thực và khớp lệnh Pure API.</p>"
-        # HAI SỐ THÊM cho hệ Forex: danh mục 27 chân giữ lệnh qua đêm, nên "mất kết
+        # HAI SỐ THÊM cho hệ Forex: danh mục nhiều chân giữ lệnh qua đêm, nên "mất kết
         # nối bao lâu" và "đang giữ bao nhiêu vị thế" quyết định người vận hành có
         # phải vào đối chiếu tay hay không.
         + _table([("Thời gian mất kết nối", f"{downtime_min:.1f} phút"),
@@ -284,7 +284,7 @@ def standby(*, account: Optional[Dict[str, Any]] = None,
         f"<h2 style='color: #d39e00; margin-top: 0;'>CHẾ ĐỘ STAND BY (THỊ TRƯỜNG ĐÓNG CỬA)</h2>"
         f"{rocket_img_tag}"
         f"<p>BOT <b>{_bot()}</b> đã chuyển sang chế độ <b>STAND BY</b> do thị trường đóng cửa (cuối tuần).</p>"
-        # ĐOẠN THÊM cho hệ Forex, và nó không phải trang trí: hệ XAU đóng hết lệnh
+        # ĐOẠN THÊM cho hệ Forex, và nó không phải trang trí: một hệ một-tài-sản đóng hết lệnh
         # trước cuối tuần, còn danh mục này CỐ Ý giữ qua cuối tuần (time-stop ngắn
         # nhất 12 nến H4 = 2 ngày). Người vận hành mở thư sáng thứ Bảy thấy vị thế
         # còn nguyên mà không có dòng này sẽ tưởng hệ quên đóng.
@@ -400,7 +400,7 @@ def account_mismatch(*, expected: str, actual: str, server: str = "") -> bool:
 
 # ═══════════════════════════════════════════════════ 2. vòng đời lệnh
 #
-# CLONE ĐẦY ĐỦ layout CARD của `shared/notifications/email_reporter.py` hệ XAUUSD
+# CLONE ĐẦY ĐỦ layout CARD của `shared/notifications/email_reporter.py` một hệ một-tài-sản
 # (`render_open_html` / `render_close_html`, thiết kế lại 21/07 và bổ sung 28-29/07).
 #
 # GIỮ NGUYÊN TOÀN BỘ CẤU TRÚC, không cắt khối nào:
@@ -542,7 +542,7 @@ def _guard_status() -> tuple:
 def _market_state_rows() -> str:
     """Hai hàng trạng thái thị trường: chế độ CỨNG và phiên giao dịch.
 
-    Nguồn là `core/intelligence/fx_market_state` (biến động rổ 20 cross theo phân
+    Nguồn là `core/intelligence/fx_market_state` (biến động rổ rổ cặp chéo theo phân
     vị trượt) và `shared/regime_taxonomy` — KHÔNG phải bộ máy AI vĩ mô của hệ
     XAUUSD, thứ hệ này cố ý không có.
     """
@@ -741,7 +741,7 @@ def entry(*, strategy: str, symbol: str, direction: str, lots: float,
         "Cỡ lệnh theo <b>vol-targeting</b>: "
         "<code>lot = equity × đòn bẩy × tỷ trọng ÷ notional</code>, KHÔNG suy từ "
         "khoảng cách tới cắt lỗ. Danh mục <b>không có SL theo giá</b> — đo lại "
-        "14/08 trên 22 chân: mọi mức SL đều tệ hơn, 1×ATR mất 23% Sharpe và làm "
+        "14/08 trên nhiều chân: mọi mức SL đều tệ hơn, 1×ATR mất 23% Sharpe và làm "
         "MaxDD TỆ ĐI. Cầu chì ≥8×ATR chỉ là lớp phòng khi tiến trình chết.",
         f"Email tự động từ {_bot()}.")
 
@@ -1106,7 +1106,7 @@ def circuit_breaker_open(*, blocked_symbols: list, why: str) -> bool:
 # ═════════════════════════════════════════ 3. rủi ro và tuân thủ FTMO
 #
 # CLONE nguyên văn các `send_alert(...)` của `core/infra/risk_guard.py` và
-# `core/infra/ftmo_guard.py` hệ XAUUSD.
+# `core/infra/ftmo_guard.py` một hệ một-tài-sản.
 #
 # Nhóm này KHÔNG dùng card 4 khối như nhóm vào/đóng lệnh — và đó là chủ ý của bản
 # cũ, không phải thiếu sót: cảnh báo rủi ro phải trông KHÁC HẲN báo cáo giao dịch
@@ -1265,10 +1265,10 @@ def kill_switch(*, reason: str, equity: float = 0.0, dd_pct: float = 0.0,
 
 def ftmo_guard(*, reason: str, equity: float, exposure_x: float = 0.0,
                leverage: float = 0.0, n_positions: int = 0) -> bool:
-    """CLONE `send_alert(...)` — `core/infra/ftmo_guard.py:251` hệ XAUUSD.
+    """CLONE `send_alert(...)` — `core/infra/ftmo_guard.py:251` một hệ một-tài-sản.
 
     Bên XAU thư này cảnh báo "vào quá số lệnh hoặc quá tổng lot cho phép". Hệ Forex
-    không giới hạn theo SỐ LỆNH — 27 chân mở cùng lúc là trạng thái bình thường —
+    không giới hạn theo SỐ LỆNH — nhiều chân mở cùng lúc là trạng thái bình thường —
     mà theo PHƠI NHIỄM (notional ÷ equity) với trần 3,50x, đo được cho MaxDD đúng
     9,00%. Nên hai ô "số lệnh / tổng lot" đổi thành "phơi nhiễm / đòn bẩy".
     """

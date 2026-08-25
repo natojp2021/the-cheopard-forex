@@ -1,28 +1,20 @@
-"""portfolio_risk.py — đọc rủi ro THẬT từ vị thế broker, không từ ý định của chiến lược.
+"""portfolio_risk.py — RỦI RO THẬT ĐANG MỞ, đọc từ broker. Không phải rủi ro DỰ ĐỊNH.
 
-VÌ SAO PHẢI ĐỌC TỪ BROKER
-==========================
-`portfolio_sizing` tính rủi ro từ tỷ trọng MONG MUỐN. Đó là ý định, không phải sự
-thật. Giữa ý định và sự thật có: lệnh khớp một phần, lệnh bị từ chối, lệnh trượt
-giá, vị thế còn sót từ phiên trước, và vị thế do người vận hành mở tay. Mỗi thứ
-trong đó làm rủi ro thật khác rủi ro tính toán, và không cái nào phát ra exception.
+VÌ SAO PHẢI ĐỌC TỪ BROKER, KHÔNG SUY TỪ KẾ HOẠCH
+=================================================
+`risk_sizing` tính rủi ro từ SL và % equity của các lệnh SẮP gửi. Đó là Ý ĐỊNH.
+Module này đọc `positions_get()` của broker và trả lời một câu khác: **đang thật sự
+mở bao nhiêu, và bao nhiêu trong đó KHÔNG có dừng lỗ.**
 
-Hệ XAUUSD có `core/execution/portfolio_risk.py` làm việc này cho một tài sản với
-dừng lỗ từng lệnh: rủi ro mở = tổng (khoảng cách tới SL × giá trị điểm). Công thức
-đó VÔ NGHĨA ở đây vì 27 chân không đặt SL chiến lược — không có "khoảng cách tới SL"
-để cộng. Bản này vì vậy viết lại quanh ba đại lượng đo được trên sổ FX:
+Hai con số này lệch nhau ở mọi chỗ đáng lo: lệnh bị từ chối một phần, lệnh khớp
+thiếu, vị thế mở tay của người vận hành, dừng lỗ bị broker gỡ. Chỉ đọc kế hoạch thì
+không thấy nhóm nào trong đó.
 
-    PHƠI NHIỄM   tổng notional / equity, so với trần đòn bẩy 3,7x
-    ĐUÔI         notional × ngày tệ nhất đã quan sát, so với mốc lỗ ngày 5%
-    BẢO VỆ       có bao nhiêu vị thế KHÔNG có lệnh dừng nào trên server broker
-
-Đại lượng thứ ba là thứ hệ này thiếu hẳn cho tới 14/08/2026 — xem `disaster_stop`.
-
-FAIL-CLOSED
-===========
-Không đọc được vị thế thì hàm BÁO LỖI, không trả về "sổ rỗng". Coi lỗi đọc là
-"không có vị thế nào" là cách một tài khoản đầy lệnh bị nhìn thành tài khoản trống,
-rồi tầng trên cấp thêm phơi nhiễm lên trên phơi nhiễm nó không thấy.
+VỊ THẾ KHÔNG CÓ DỪNG LỖ LÀ ĐẦU RA QUAN TRỌNG NHẤT
+==================================================
+`RiskSnapshot.unprotected` đi thẳng vào `entry_gate` và làm cổng CHẶN. Một vị thế mở
+mà không có dừng lỗ trên server là rủi ro KHÔNG ĐO ĐƯỢC — và mở thêm lệnh khi đang có
+một cái như vậy là chồng rủi ro không đo được lên rủi ro không đo được.
 """
 from __future__ import annotations
 
@@ -34,7 +26,7 @@ from src.python.core.infra import target_mode
 from src.python.execution import ftmo_leverage_policy as POL
 from src.python.shared import asset_profile as AP
 
-# Ngày tệ nhất ĐÃ QUAN SÁT của danh mục 27 chân ở đòn bẩy 1,0, đơn vị % equity.
+# Ngày tệ nhất ĐÃ QUAN SÁT của danh mục nhiều chân ở đòn bẩy 1,0, đơn vị % equity.
 # Đo trên 2.389 ngày 2020-01 → 2026-07. Dùng để quy phơi nhiễm hiện tại thành tổn
 # thất đuôi ước lượng — cùng nguồn số với `ftmo_leverage_policy.TAIL_BUFFER`.
 PORTFOLIO_WORST_DAY_PCT = 0.794

@@ -59,7 +59,7 @@ def send_exception_alert_email(error_sig: str, exc_info: str, context: str = "")
 
     try:
         # ⚠️ SỬA 15/08/2026 — EMAIL CẢNH BÁO LỖI CHƯA TỪNG GỬI ĐƯỢC.
-        # Bản port từ hệ XAUUSD gọi `shared.notifications.email_reporter`, module
+        # Bản port từ một hệ một-tài-sản gọi `shared.notifications.email_reporter`, module
         # KHÔNG TỒN TẠI ở hệ này. Mỗi lần có ngoại lệ, khối này ném `ModuleNotFound`
         # ngay dòng đầu, rơi vào `except` bên dưới và chỉ ghi một dòng log —
         # tức đúng kênh sinh ra để báo lỗi khi không ai nhìn màn hình thì im lặng

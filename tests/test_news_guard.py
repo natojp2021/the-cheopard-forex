@@ -38,18 +38,30 @@ def calendar_file(tmp_path) -> Path:
 
 
 # ═══════════════════════════════════════════════════════ tầng 0 — lịch
-def test_high_impact_event_blocks_whole_day(calendar_file):
-    """NFP chặn CẢ NGÀY, không chỉ ±60 phút — thanh khoản mỏng từ nhiều giờ trước."""
-    for hour in ("00:30", "08:00", "12:30", "20:00"):
-        d = NG.decide(pd.Timestamp(f"2026-08-10 {hour}", tz="UTC"), calendar_path=calendar_file, force=True)
-        assert d.blocked, f"{hour} không bị chặn dù hôm nay có NFP"
-        assert d.severity == "HIGH"
+def test_high_impact_event_blocks_only_a_narrow_window(calendar_file):
+    """NFP chặn ±30 phút quanh mốc công bố, KHÔNG chặn cả ngày.
+
+    Chặn cả ngày là sai hướng, và số đo nói rõ: 41 lệnh nằm trong ngày có
+    NFP/CPI/FOMC có kỳ vọng +0,1985 R, tức HƠN HAI LẦN trung bình. Chặn chúng mất
+    8,1R mà MaxDD chỉ nhích 8,90% -> 8,87%. Cửa sổ ±30 phút thì ngược lại: mất 0,2%
+    tiền và MaxDD giảm 8,90% -> 8,17%. Bảng đầy đủ ở `ai/news_guard.py`.
+    """
+    for hour in ("12:05", "12:30", "12:55"):
+        d = NG.decide(pd.Timestamp(f"2026-08-10 {hour}", tz="UTC"),
+                      calendar_path=calendar_file, force=True)
+        assert d.blocked, f"{hour} nằm trong cửa sổ NFP mà không bị chặn"
         assert "NFP" in d.events
+    for hour in ("00:30", "08:00", "20:00"):
+        d = NG.decide(pd.Timestamp(f"2026-08-10 {hour}", tz="UTC"),
+                      calendar_path=calendar_file, force=True)
+        assert not d.blocked, (
+            f"{hour} bị chặn dù cách mốc NFP nhiều giờ — đây là chặn cả ngày, và nó "
+            f"lấy đi những lệnh có kỳ vọng gấp đôi trung bình")
 
 
 def test_normal_event_blocks_narrow_window_only(calendar_file):
-    """ECB_RATE chỉ chặn ±60 phút — chặn cả ngày cho mọi tin là mất quá nhiều edge."""
-    in_window = NG.decide(pd.Timestamp("2026-08-12 11:30", tz="UTC"), calendar_path=calendar_file, force=True)
+    """ECB_RATE chặn ±30 phút — cùng cửa sổ với mọi sự kiện khác."""
+    in_window = NG.decide(pd.Timestamp("2026-08-12 11:45", tz="UTC"), calendar_path=calendar_file, force=True)
     assert in_window.blocked and in_window.severity == "MEDIUM"
 
     out_of_window = NG.decide(pd.Timestamp("2026-08-12 08:00", tz="UTC"), calendar_path=calendar_file, force=True)
@@ -192,18 +204,18 @@ def test_explain_is_readable(calendar_file):
 
 
 # ═══════════════════════════════════════════════════════ công tắc
-def test_disabled_by_default(calendar_file, monkeypatch):
-    """Cổng phải TẮT theo mặc định — đo được nó làm hại trên rổ cross hiện tại.
+def test_enabled_by_default(calendar_file, monkeypatch):
+    """Cổng phải BẬT theo mặc định trên rổ hiện tại — cả ba cặp đều chứa USD.
 
-    Vòng 63: lệnh vào ngày tin có net +10,33 bps so với +6,35 ngày thường, và chặn
-    mọi tin kéo Sharpe trung vị 0,811 → 0,622. Cross không chứa USD phản ứng thái quá
-    với tin Mỹ rồi hồi về — sự lệch đó CHÍNH LÀ thứ chiến lược khai thác.
+    Đo được: cửa sổ ±30 phút lấy đi 1,9% số lệnh và 0,2% lợi nhuận, đổi lấy MaxDD
+    giảm 8,90% -> 8,17%. Với ràng buộc FTMO thì 0,73 điểm phần trăm đệm tới sàn 9%
+    đáng giá hơn nhiều 0,2% lợi nhuận.
     """
     monkeypatch.delenv("NEWS_GUARD", raising=False)
-    d = NG.decide(pd.Timestamp("2026-08-10 12:00", tz="UTC"), calendar_path=calendar_file)
-    assert not d.blocked, "cổng bật mặc định — sẽ lấy đi 23% Sharpe"
-    assert d.source == "DISABLED"
-    assert "0,811" in d.reason or "TẮT" in d.reason
+    d = NG.decide(pd.Timestamp("2026-08-10 12:30", tz="UTC"),
+                  calendar_path=calendar_file)
+    assert d.blocked, "cổng tắt mặc định — lệnh sẽ vào đúng phút công bố NFP"
+    assert d.source == "CALENDAR"
 
 
 def test_enabled_via_environment_variable(calendar_file, monkeypatch):
@@ -229,7 +241,7 @@ def test_reads_the_time_utc_column(tmp_path, monkeypatch):
     df.to_parquet(p)
     NG._cache["df"], NG._cache["mtime"] = None, None
     monkeypatch.setenv("NEWS_GUARD", "1")
-    d = NG.decide(pd.Timestamp("2026-08-10 09:00", tz="UTC"), calendar_path=p)
+    d = NG.decide(pd.Timestamp("2026-08-10 12:20", tz="UTC"), calendar_path=p)
     assert d.blocked and "NFP" in d.events
 
 

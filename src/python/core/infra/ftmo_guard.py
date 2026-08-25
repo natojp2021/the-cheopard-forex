@@ -4,12 +4,12 @@ VÌ SAO MODULE NÀY PHẢI TỒN TẠI
 ===============================
 Trước 15/08/2026 hệ Forex KHÔNG có lớp nào ĐÓNG lệnh vì rủi ro. Ba lớp đang có —
 `entry_gate`, `ftmo_leverage_policy`, `trading_control` — đều chỉ chặn lệnh MỚI.
-Đối chiếu với hệ XAUUSD cho thấy chỗ hổng: bên đó `engine._loop` gọi
+Đối chiếu với một hệ một-tài-sản cho thấy chỗ hổng: bên đó `engine._loop` gọi
 `risk_guard.monitor_equity_drawdown()`, `risk_guard.check_kill_switch()` và
 `ftmo_guard.check(mt5)` mỗi chu kỳ; bên này `check_kill_switch()` được port sang
 nhưng KHÔNG AI GỌI, và `ftmo_guard` thì không có.
 
-Hệ quả với đúng danh mục này: 27 chân giữ lệnh qua đêm và qua cuối tuần, không
+Hệ quả với đúng danh mục này: nhiều chân giữ lệnh qua đêm và qua cuối tuần, không
 chân nào có SL theo giá. Giá chạy ngược cả rổ thì không có gì đóng — cầu chì
 `disaster_stop` đặt ở ≥8×ATR với ngân sách 2%/vị thế, nên nhiều vị thế cùng nổ
 đã vượt xa mốc ngày 5%, mà chúng chỉ nổ SAU khi tổn thất đã xảy ra.
@@ -129,7 +129,7 @@ def open_risk_usd(mt5) -> Tuple[float, bool]:
     if positions is None:
         return 0.0, False           # LỖI ĐỌC, không phải "không có vị thế"
 
-    from src.python.execution import portfolio_sizing as PS
+    from src.python.execution import risk_sizing as PS
     from src.python.shared import asset_profile as AP
 
     total = 0.0

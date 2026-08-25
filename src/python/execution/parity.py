@@ -277,20 +277,37 @@ def _decide(mod, sub: pd.DataFrame, ins, held: int, side: int = 0):
     thì lối thoát đó im — 88% số lệnh sẽ chạy tới time-stop thay vì thoát ở trung
     bình. Đây chính là bug mà kiểm định parity tìm ra ngày 15/08/2026.
     """
-    if "zband" in mod.__name__:
-        from src.python.strategies import zband_core as ZB
-        return ZB.live_decision(sub, ins.cost_1rt_bps, ins.swap_bps_per_bar,
-                                mod.CONFIG, bars_held=held, side=side)
-    from src.python.strategies import signal_families as SF
-    return SF.live_decision(sub, ins.cost_1rt_bps, ins.swap_bps_per_bar,
-                            mod.CONFIG, bars_held=held, side=side)
+    raise NotImplementedError(
+        f"{mod.__name__}: cổng parity này được dựng cho hai họ `asia_sweep_core` và "
+        f"`asia_sweep_core`, cả hai đã XOÁ ngày 25/08/2026 cùng danh mục nhiều chân.\n"
+        f"\n"
+        f"VÌ SAO KHÔNG PORT THẲNG ĐƯỢC sang `AsiaSweepH1` — ba giả định của vòng "
+        f"replay ở `replay_leg()` không còn đúng:\n"
+        f"  · `bars_held`/`side` — chân cũ thoát bằng time-stop theo SỐ NẾN và bằng "
+        f"'z qua 0'. Chân mới thoát bằng SL/TP trên SERVER và bằng GIỜ trong phiên, "
+        f"nên hai tham số đó không mô tả trạng thái của nó.\n"
+        f"  · `ins.cost_1rt_bps` / `swap_bps_per_bar` — chi phí ước lượng theo nến. "
+        f"Chân mới đọc spread THẬT tại phút khớp, và không giữ qua đêm nên không có "
+        f"swap.\n"
+        f"  · một khung duy nhất — chân mới cần M1 để đua SL/TP trong nến, còn tín "
+        f"hiệu ở H1.\n"
+        f"\n"
+        f"THỨ THAY THẾ, và nó đã chạy: `asia_sweep_core.simulate_path()` chạy vị thế "
+        f"trên nến M1 với đúng ngữ nghĩa SL/TP nằm trên server (SL được tính TRƯỚC "
+        f"trong cùng một phút — giả định bảo thủ, xem docstring của hàm đó).\n"
+        f"\n"
+        f"CÒN THIẾU, và phải dựng lại: đoạn SAU quyết định — `order_plan.build()` -> "
+        f"`order_router.route()` -> `SimBroker.order_send()` -> `PositionBook`, tức "
+        f"đúng phần mà module này sinh ra để kiểm. `tests/test_live_path.py` và "
+        f"`tests/test_execution_layer.py` phủ một phần, nhưng không phủ vòng replay "
+        f"nhiều nghìn nến.")
 
 
 def _mini_plan(symbol: str, cur: int, want: int, broker: SimBroker, i: int,
                *, with_disaster_stop: bool, exit_reason: str = ""):
     """Kế hoạch một-công-cụ, đúng dạng `order_router.route()` nhận.
 
-    KHÔNG gọi `order_plan.build()` ở đây: hàm đó cần `PortfolioTargets` của cả 27
+    KHÔNG gọi `order_plan.build()` ở đây: hàm đó cần `PortfolioTargets` của toàn bộ
     chân và mỗi lần gọi chạy lại toàn bộ backtest (~130 giây). Kiểm định parity cần
     hàng nghìn lượt, nên phần được kiểm ở đây là ĐOẠN SAU của đường live — phân loại
     việc phải làm, đảo chiều thành hai lệnh, gắn cầu chì, khớp qua broker, cập nhật

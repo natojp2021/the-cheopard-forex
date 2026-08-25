@@ -96,7 +96,7 @@ NOISE_PATTERNS: Tuple[Tuple[str, ...], ...] = (
     # ── máy trạng thái lệnh, thêm 15/08/2026
     #
     # `order_state_machine` ghi một dòng cho MỖI lệnh được tạo và MỖI lần chuyển
-    # trạng thái. Với 27 chân tái cân bằng theo giờ, đó là hàng chục dòng mỗi chu
+    # trạng thái. Với nhiều chân tái cân bằng theo giờ, đó là hàng chục dòng mỗi chu
     # kỳ nói lại đúng thứ mà dòng `[OK] AUDCAD OPEN ...` của router đã nói. Vết
     # đầy đủ nằm ở `logs/live/durable_event_log.jsonl` — bền hơn sổ log nhiều.
     ("[STATE_MACHINE]",),
@@ -119,7 +119,7 @@ def file_log_disabled() -> bool:
     timeline cũng phải im theo, nếu không cờ đó chỉ chặn được một nửa.
 
     Tên cờ đổi từ `QUANT_XAU_DISABLE_FILE_LOG` sang `CHEOPARD_FX_DISABLE_FILE_LOG`
-    khi chuyển sang Forex: giữ tên cũ thì đặt cờ cho hệ này sẽ làm câm luôn hệ XAU
+    khi chuyển sang Forex: giữ tên cũ thì đặt cờ cho hệ này sẽ làm câm luôn một hệ một-tài-sản
     nếu hai hệ cùng chạy trên một máy.
     """
     return os.environ.get("CHEOPARD_FX_DISABLE_FILE_LOG", "").strip().lower() in {"1", "true", "yes"}

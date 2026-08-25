@@ -1,28 +1,14 @@
-"""trading_control.py — CÔNG TẮC THỦ CÔNG của người vận hành. SSOT, bền vững trên đĩa.
+"""trading_control.py — CÔNG TẮC GIAO DỊCH THỦ CÔNG, BỀN VỮNG trên đĩa.
 
-CHUẨN LẤY TỪ `quant-xau/core/execution/trading_control.py`
-==========================================================
-Hệ XAUUSD có công tắc này và `entry_gate` của hệ Forex đã đòi tham số
-`trading_enabled` từ đầu — nhưng KHÔNG module nào sinh ra giá trị đó. Cổng đang chờ
-một thứ không tồn tại, và bên gọi phải tự bịa ra `True`. Đợt kiểm toán 14/08/2026
-tìm ra chỗ này.
-
-RANH GIỚI QUAN TRỌNG NHẤT — CHỈ CHẶN VÀO LỆNH MỚI
-==================================================
-Tắt công tắc KHÔNG:
-    · đóng vị thế đang mở
-    · gỡ cầu chì thảm hoạ trên broker
-    · dừng đối soát, dừng ghi nhật ký, dừng đếm time-stop
-
-Lý do giữ nguyên như hệ cũ: một vị thế đang mở mà mất người quản lý là tình trạng
-NGUY HIỂM HƠN việc vào thêm lệnh. Muốn đóng sạch thì đó là kill switch — chức năng
-riêng, có xác nhận riêng.
-
-BỀN VỮNG TRÊN ĐĨA, KHÔNG PHẢI BIẾN TOÀN CỤC
-============================================
-Công tắc phải sống qua restart. Một người vận hành tắt giao dịch lúc 22:00 rồi bot
-tự khởi động lại lúc 23:00 và bật lại giao dịch là đúng cái tình huống công tắc sinh
-ra để chặn.
+BA TÍNH CHẤT, VÀ CẢ BA ĐỀU BẮT BUỘC
+====================================
+    BỀN VỮNG    trạng thái nằm trên đĩa, không trong RAM. Khởi động lại tiến trình
+                KHÔNG được bật lại giao dịch — người vận hành tắt là tắt.
+    FAIL-CLOSED file hỏng, thiếu, không đọc được  ->  TẮT. Không đọc được ý định của
+                người vận hành thì không được đoán rằng họ muốn giao dịch.
+    CHỈ CHẶN MỞ tắt công tắc KHÔNG khoá đường thoát. Vị thế đang mở vẫn được đóng,
+                dừng lỗ vẫn chạy. Một vị thế đang mở mà mất người quản lý là tình
+                trạng nguy hiểm hơn việc vào thêm lệnh.
 """
 from __future__ import annotations
 

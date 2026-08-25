@@ -51,7 +51,7 @@ DEFAULT_BARS = 200_000
 # ═══════════════════════════════════════════════════════════════════════════════
 # MÚI GIỜ: MT5 TRẢ GIỜ MÁY CHỦ, PARQUET LÀ UTC — PHẢI QUY ĐỔI
 #
-# LỖI PHÁT HIỆN 22/08/2026 (kiểm toán chéo từ hệ `quant-xau`)
+# LỖI PHÁT HIỆN 22/08/2026 (kiểm toán chéo từ hệ `hệ một-tài-sản`)
 # ═══════════════════════════════════════════════════════════════════════════════
 # `load_m1()` làm `pd.to_datetime(rates["time"], unit="s")` rồi trả luôn. Nhưng
 # `rates["time"]` của MT5 mang **giờ MÁY CHỦ** (FTMO/MetaQuotes chạy giờ Đông Âu:
@@ -63,7 +63,7 @@ DEFAULT_BARS = 200_000
 #
 # HẬU QUẢ ĐO ĐƯỢC, theo thứ tự nghiêm trọng:
 #
-# 1. `cross_mean_reversion` (H1) chặn theo giờ: `EXECUTION_WINDOW_UTC = 10..16`,
+# 1. chân hồi quy trên cặp chéo (H1) chặn theo giờ: `EXECUTION_WINDOW_UTC = 10..16`,
 #    `FORBIDDEN_HOURS_UTC = 20..23`, đọc `ts.hour` của chỉ mục nến. Ở backtest `ts`
 #    là UTC nên cửa sổ đúng; ở live `ts` là giờ máy chủ nên cửa sổ THẬT chạy vào
 #    **07-13 UTC** và giờ bị cấm THẬT là **17-20 UTC**. Chân này giao dịch đúng
@@ -258,7 +258,7 @@ def log_fetch_failure_throttled(tag: str, symbol: str, reason: str,
                                 min_interval_s: float = 300.0) -> None:
     """SSOT cảnh báo khi `mt5.copy_rates_from_pos()` thất bại / không đủ bar.
 
-    CLONE từ `live_strategies/market_guards.py` của hệ XAUUSD, giữ nguyên tên hàm,
+    CLONE từ `live_strategies/market_guards.py` của một hệ một-tài-sản, giữ nguyên tên hàm,
     tên khoá thống kê và cấu trúc thông điệp.
 
     Trước bản vá đó, mọi `_fetch_*()` coi `rates is None or len(rates) < N` như nhau
@@ -289,7 +289,7 @@ def log_fetch_failure_throttled(tag: str, symbol: str, reason: str,
 #   cuu_duoc  : trong số đó, bao nhiêu lần thử lại thành công
 #   ngoai_le  : số lần `copy_rates_from_pos` NÉM LỖI
 #
-# Đếm chứ không chỉ vá: bản XAUUSD ghi thẳng trong docstring rằng phép thăm dò 240
+# Đếm chứ không chỉ vá: bản một-tài-sản ghi thẳng trong docstring rằng phép thăm dò 240
 # lần liên tiếp KHÔNG tái hiện được lần hỏng nào, tức chưa chứng minh được "gọi lại
 # sau 0,3s sẽ thành công". Bộ đếm này là cách để sau vài ngày có số liệu thật, thay
 # vì để một bản vá không ai kiểm chứng nằm mãi trong code.
@@ -302,7 +302,7 @@ def copy_rates_retry(mt5, symbol: str, timeframe, count: int, *, tag: str,
                      quiet: bool = False):
     """SSOT fetch nến có THỬ LẠI. Trả `rates` hoặc `None` (đã log giúp bên gọi).
 
-    CLONE từ `live_strategies/market_guards.copy_rates_retry` của hệ XAUUSD.
+    CLONE từ `live_strategies/market_guards.copy_rates_retry` của một hệ một-tài-sản.
 
     VÌ SAO CÓ (bằng chứng đo được bên đó, 03/08/2026)
     ==================================================
@@ -464,7 +464,7 @@ def load_m1(symbol: str, mt5=None, *, n_bars: int = DEFAULT_BARS
     df = pd.DataFrame(raw)
     # QUY VỀ UTC. `rates["time"]` mang giờ MÁY CHỦ; parquet là UTC; và cả module này
     # tồn tại để hai nguồn thay thế được cho nhau. Xem khối "MÚI GIỜ" đầu file cho
-    # ba hậu quả đo được của việc bỏ dòng này (cửa sổ giờ của `cross_mean_reversion`
+    # ba hậu quả đo được của việc bỏ dòng này (cửa sổ giờ của chân hồi quy trên cặp chéo
     # lệch 3 giờ, biên nến H4/D1 lệch, cổng dữ liệu ôi không bao giờ kích hoạt).
     off_h = server_offset_hours(mt5, symbol)
     df["time"] = pd.to_datetime(df["time"].astype("int64") - off_h * 3600, unit="s")
@@ -511,7 +511,7 @@ _LAST_GOOD_SPREAD: Dict[str, float] = {}
 
 # Lần cuối đã NÓI về spread thay thế của từng công cụ, theo `time.time()`.
 #
-# Hàm này được gọi mỗi lần nạp nến, tức nhiều lần mỗi giây khi 27 chân cùng dựng
+# Hàm này được gọi mỗi lần nạp nến, tức nhiều lần mỗi giây khi nhiều chân cùng dựng
 # kế hoạch. Đo 19:14 ngày 20/08/2026: dòng `[SPREAD] EURUSD ...` chiếm 14 trong 15
 # dòng cuối của nhật ký và đẩy mọi dòng có ích ra ngoài màn hình — đúng họ lỗi mà
 # CLAUDE.md gọi là "sửa từ GỐC ở điểm ghi log". Trạng thái ổn định thì nói MỘT LẦN
@@ -575,8 +575,8 @@ def _live_spread_fallback(symbol: str, point: float, n_bars: int):
 
     EURUSD nằm trong `FX_ALL`, mà `build_crosses` gộp 7 cặp USD bằng
     `DataFrame(px).dropna()`. Một cột rỗng làm giao của mọi cột thành RỖNG: cả
-    20 cross mất sạch dữ liệu, `evaluate_cross` gọi `idx[-1]` trên chỉ mục rỗng
-    và ném `IndexError`, `_build_plan` hỏng — nên **cả 27 chân không vào được
+    rổ cặp chéo mất sạch dữ liệu, `evaluate_cross` gọi `idx[-1]` trên chỉ mục rỗng
+    và ném `IndexError`, `_build_plan` hỏng — nên **toàn bộ các chân không vào được
     lệnh nào**, mỗi chu kỳ, im lặng, trong khi nhịp tim vẫn báo "MT5 OK".
 
     Một công cụ có dữ liệu spread kém đã hạ toàn bộ danh mục.
@@ -602,7 +602,7 @@ def _live_spread_fallback(symbol: str, point: float, n_bars: int):
     # `symbol_info(EURUSD).spread` trên feed demo này chớp 1 → 0 → 3 → 0 trong
     # vòng vài giây. Đọc đúng MỘT lần rồi kết luận "không đo được" là kết luận
     # dựa trên một mẫu duy nhất của một đại lượng nhiễu — và cái giá của kết
-    # luận sai là mất cả công cụ, kéo theo rổ 20 cross và cả 27 chân.
+    # luận sai là mất cả công cụ, kéo theo rổ rổ cặp chéo và toàn bộ các chân.
     #
     # Năm lần đọc cách nhau 0,1 giây tốn nửa giây mỗi lần nạp nến, và chỉ chạy ở
     # nhánh spread lịch sử đã hỏng.
@@ -637,7 +637,7 @@ def _live_spread_fallback(symbol: str, point: float, n_bars: int):
     #
     # Đo 20/08/2026 trên chính tài khoản demo này: `symbol_info("EURUSD").spread`
     # trả 0 rồi 1 rồi 0 trong vòng vài giây. Không nhớ số cũ thì EURUSD rụng khỏi
-    # rổ ở chu kỳ này và quay lại ở chu kỳ sau — rổ 20 cross đổi thành phần theo
+    # rổ ở chu kỳ này và quay lại ở chu kỳ sau — rổ rổ cặp chéo đổi thành phần theo
     # nhịp ngẫu nhiên, tức chiến lược chạy trên một vũ trụ không xác định. Đó là
     # thứ tệ hơn cả hai lựa chọn ban đầu.
     cached = _LAST_GOOD_SPREAD.get(symbol)
