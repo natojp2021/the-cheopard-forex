@@ -39,6 +39,18 @@ import pytest
 # khong trong fixture vi handler file duoc tao LUC IMPORT module logger.
 os.environ.setdefault("CHEOPARD_DISABLE_FILE_LOG", "1")
 
+# TAT SMTP THAT NGAY TU DAU, TRUOC MOI IMPORT — cung ly do voi dong tren.
+#
+# SU CO 25/08/2026: mot dot chay pytest gui THAT mot email "vao lenh SELL
+# AUDCAD" toi hop thu van hanh, du danh muc dang chay chi con 3 cap EU/GU/UJ —
+# du lieu AUDCAD/trade_id gia (#12345) la cua mot FIXTURE test, khong phai
+# giao dich that. `.env` cua repo nay dat APP_ENV=PROD (bat buoc cho bot LIVE),
+# va conftest truoc do KHONG co dong nao chan `mailer.send()` doc lai bien do —
+# nen MOI test cham vao duong gui email deu gui THAT ra SMTP that, khong can
+# mock rieng. Ep APP_ENV khac PROD o day, TRUOC khi `core.config` import va
+# chot IS_PROD, la lop chan DAU TIEN.
+os.environ["APP_ENV"] = "test"
+
 
 @pytest.fixture(autouse=True)
 def _isolate_position_book(monkeypatch, tmp_path):
@@ -50,4 +62,37 @@ def _isolate_position_book(monkeypatch, tmp_path):
                             raising=False)
     except Exception:
         pass
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _block_real_smtp(monkeypatch):
+    """HAI lop chan, khac tang, cung chan MOT lop hong khong keo sap ca hai:
+
+    1. `core.config.IS_PROD` ep False — phong khi mot module da import bien
+       nay TRUOC dong `os.environ["APP_ENV"]` o dau file (vd mot plugin pytest
+       khac import som hon).
+    2. `smtplib.SMTP`/`SMTP_SSL` NEM LOI ngay khi khoi tao — lop chan tan cung,
+       giong het `quant-xau/tests/conftest.py` (repo em cung mandate, da dung
+       pattern nay truoc va chua tung bi vuot qua). Dai dien cho truong hop
+       MOT ham `mailer.send()` khac trong tuong lai bo qua kiem tra `IS_PROD`
+       (vd mot nhanh code moi, mot ham gui thu rieng cho bao cao) — lop nay
+       van chan duoc du khong biet truoc ham do la gi.
+    """
+    try:
+        from src.python.core import config as _cfg
+
+        monkeypatch.setattr(_cfg, "IS_PROD", False, raising=False)
+    except Exception:
+        pass
+
+    import smtplib
+
+    class _NoSMTP:
+        def __init__(self, *a, **k):
+            raise AssertionError(
+                "Test cam mo ket noi SMTP that - mock send_email/_email o tang cao hon.")
+
+    monkeypatch.setattr(smtplib, "SMTP", _NoSMTP)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _NoSMTP, raising=False)
     yield
