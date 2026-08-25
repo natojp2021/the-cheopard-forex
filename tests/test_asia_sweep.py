@@ -226,6 +226,39 @@ def test_unknown_grade_raises(cfg):
         _ = bad.min_grade_rank
 
 
+def test_exec_windows_default_matches_single_range(cfg):
+    """`exec_windows_utc=None` phải tương đương ĐÚNG dải cũ `[exec_start, exec_end)`
+    — tránh cấu hình cũ nào chưa khai báo trường mới bị đổi hành vi ngầm."""
+    assert cfg.exec_windows_utc is None or len(cfg.exec_windows_utc) >= 1
+    plain = dataclasses.replace(cfg, exec_windows_utc=None)
+    got = SC._exec_windows_minutes(plain)
+    want = (SC.minute_of_session(plain.exec_start_utc),
+            SC.minute_of_session(plain.exec_end_utc))
+    assert got == (want,)
+
+
+def test_exec_windows_killzone_splits_into_two_disjoint_ranges(cfg):
+    """SỰ CỐ 25/08/2026 — cửa sổ liên tục 07:00-20:00 UTC cho vào lệnh cả lúc
+    23:19 giờ VN (16:19 UTC), một giờ "Late Sweep" ngoài lý thuyết killzone. Người
+    vận hành chốt: chỉ săn tín hiệu ở London Open (07:00-10:00 UTC) và NY Open
+    (12:00-14:00 UTC), bỏ khoảng trũng thanh khoản giữa hai phiên."""
+    killzone = dataclasses.replace(
+        cfg, exec_windows_utc=((7.0, 10.0), (12.0, 14.0)))
+    windows = SC._exec_windows_minutes(killzone)
+    assert len(windows) == 2
+
+    def in_any(hour_utc: float) -> bool:
+        m = SC.minute_of_session(hour_utc)
+        return any(a <= m < b for a, b in windows)
+
+    assert in_any(8.0), "08:00 UTC (London Open) phải NẰM TRONG killzone"
+    assert in_any(13.0), "13:00 UTC (NY Open) phải NẰM TRONG killzone"
+    assert not in_any(11.0), "11:00 UTC (khoảng trũng giữa hai phiên) phải BỊ LOẠI"
+    assert not in_any(16.0), (
+        "16:19 UTC (23:19 giờ VN, lệnh USDJPY gây nghi vấn) phải BỊ LOẠI — "
+        "đây chính là sự cố đã báo cáo")
+
+
 def test_every_rejected_session_carries_a_reason(m1, cfg):
     """Phiên KHÔNG vào lệnh vẫn phải nói LÝ DO — `decision_log` ghi cả HOLD/SKIP."""
     p = SC.prepare(m1, cfg)

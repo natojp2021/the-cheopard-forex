@@ -178,6 +178,12 @@ class SweepConfig:
     exec_end_utc: float = 15.0
     flat_utc: float = 20.0
 
+    # Nhiều cửa sổ khớp lệnh RỜI RẠC (killzone), vd London Open + NY Open tách biệt
+    # bởi khoảng trũng thanh khoản giữa hai phiên. `None` = dùng đúng MỘT cửa sổ
+    # liên tục `[exec_start_utc, exec_end_utc)` như trước — giữ tương thích ngược
+    # cho mọi cấu hình/test chưa khai báo trường này.
+    exec_windows_utc: Optional[Tuple[Tuple[float, float], ...]] = None
+
     # ── Lớp 2: bộ lọc biên Á (pip) — setup xấu #1
     range_min_pips: float = 15.0
     range_max_pips: float = 45.0
@@ -586,6 +592,12 @@ def _fvg(bars: pd.DataFrame, i_sweep: int, sweep_side: int,
     return False, float("nan")
 
 
+def _exec_windows_minutes(cfg: "SweepConfig") -> Tuple[Tuple[int, int], ...]:
+    """Danh sách cửa sổ khớp lệnh, quy ra phút-trong-phiên. Một hoặc nhiều cửa sổ."""
+    pairs = cfg.exec_windows_utc or ((cfg.exec_start_utc, cfg.exec_end_utc),)
+    return tuple((minute_of_session(a), minute_of_session(b)) for a, b in pairs)
+
+
 # ═══════════════════════════════════════════════════════════ Lớp 7 — CLASSIFIER
 def _grade(*, aligned: bool, has_mss: bool, has_fvg: bool, confluent: bool,
            took_htf: bool) -> str:
@@ -650,17 +662,22 @@ def detect_setup(p: Prepared, session: pd.Timestamp, cfg: SweepConfig,
                   f"{int(lq.took_htf)}"))
     base["h1_bias"] = b
 
-    m0 = minute_of_session(cfg.exec_start_utc)
-    m_end = minute_of_session(cfg.exec_end_utc)
+    windows = _exec_windows_minutes(cfg)
+    m0 = min(a for a, _ in windows)
+    m_end = max(b for _, b in windows)
     if upto_minute is not None:
         m_end = min(m_end, upto_minute)
     sess_bars = p.exec_bars[p.exec_bars["session"] == session]
-    # `detect` = phần được phép ĐỌC để ra quyết định: chỉ nến trong cửa sổ khớp lệnh,
-    # và ở live chỉ nến đã đóng (`upto_minute`). Mọi phép quét cú quét, MSS và FVG
-    # chạy trên `detect`; `sess_bars` chỉ dùng để lấy giá MỞ nến vào lệnh. Tách hai
-    # khung là cách để một lỗi nhìn trước không thể lặng lẽ quay lại.
+    # `detect` = phần được phép ĐỌC để ra quyết định: chỉ nến TRƯỚC mép cuối của cửa
+    # sổ khớp lệnh xa nhất, và ở live chỉ nến đã đóng (`upto_minute`). Mọi phép quét
+    # cú quét, MSS và FVG chạy trên `detect`; `sess_bars` chỉ dùng để lấy giá MỞ nến
+    # vào lệnh. Tách hai khung là cách để một lỗi nhìn trước không thể lặng lẽ quay
+    # lại. `w` siết thêm: CHỈ nến rơi vào MỘT trong các cửa sổ killzone mới được coi
+    # là cú quét hợp lệ — nến ở khoảng trũng GIỮA hai killzone (vd 10:00-12:00 UTC
+    # giữa London Open và NY Open) không được kích hoạt lệnh dù vẫn nằm trong `detect`.
     detect = sess_bars[sess_bars["m"] < m_end]
-    w = detect[detect["m"] >= m0]
+    in_window = detect["m"].apply(lambda m: any(a <= m < b for a, b in windows))
+    w = detect[in_window & (detect["m"] >= m0)]
     if w.empty:
         steps.append(("window", False, f"chưa có nến {cfg.exec_tf} nào trong cửa sổ"))
         return mk("ARMED", **base)
@@ -1065,11 +1082,15 @@ def rulebook(cfg: SweepConfig, *, expectancy: str, frequency: str,
         family="Asia Range Sweep (quét thanh khoản biên phiên Á, vào NGƯỢC cú quét)",
         source=source,
         hours_utc=(f"biên Á {cfg.asia_start_utc:02.0f}:00-{cfg.asia_end_utc:02.0f}:00 "
-                   f"(không vào lệnh) · khớp {cfg.exec_start_utc:02.0f}:00-"
-                   f"{cfg.exec_end_utc:02.0f}:00 · đóng hết {cfg.flat_utc:02.0f}:00"),
+                   f"(không vào lệnh) · khớp "
+                   + " · ".join(f"{a:02.0f}:00-{b:02.0f}:00"
+                                for a, b in (cfg.exec_windows_utc
+                                             or ((cfg.exec_start_utc, cfg.exec_end_utc),)))
+                   + f" · đóng hết {cfg.flat_utc:02.0f}:00"),
         forbidden_hours_utc=tuple(
             h for h in range(24)
-            if not (cfg.exec_start_utc <= h < cfg.exec_end_utc)),
+            if not any(a <= h < b for a, b in
+                       (cfg.exec_windows_utc or ((cfg.exec_start_utc, cfg.exec_end_utc),)))),
         indicators=(
             f"L2 biên Á = high/low của M1 trong {cfg.asia_start_utc:02.0f}:00-"
             f"{cfg.asia_end_utc:02.0f}:00 UTC",

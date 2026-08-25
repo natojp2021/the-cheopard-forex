@@ -259,6 +259,24 @@ _WIDE_BANDS: Dict[str, object] = dict(
 _MSS_GATE: Dict[str, object] = dict(require_mss=True, min_grade="A",
                                     mss_max_bars=3)
 
+# KILLZONE — quyết định người vận hành 25/08/2026: chỉ săn tín hiệu trong hai cửa
+# sổ thanh khoản mở phiên, KHÔNG dùng cửa sổ liên tục rộng của `_WIDE_BANDS` nữa.
+#
+#     London Open   14:00-17:00 giờ VN  = 07:00-10:00 UTC
+#     NY Open       19:00-21:00 giờ VN  = 12:00-14:00 UTC
+#
+# `_WIDE_BANDS` nới `exec_end_utc` tới 20:00 UTC để có đủ mẫu (1.256 lệnh/11,5 năm)
+# nhưng khoảng trũng thanh khoản 10:00-12:00 UTC và sau 14:00 UTC vẫn nằm TRONG cửa
+# sổ đó — đúng loại "Late Sweep" mà lý thuyết vi cấu trúc thị trường cảnh báo, và
+# t-stat đo được của preset MSS (+0,52) không đủ ý nghĩa thống kê để bác lại cảnh
+# báo đó. Killzone áp dụng SAU `_WIDE_BANDS` nên `exec_start_utc`/`exec_end_utc` của
+# nó bị bỏ qua — `exec_windows_utc` là nguồn chân lý khi đã khai báo.
+#
+# CHƯA ĐO expectancy của cấu hình này trên dữ liệu M1 thật — cần chạy lại
+# `research/fx/asia_sweep_lab.py` trước khi coi đây là kết luận, không chỉ giả định.
+_KILLZONE: Dict[str, object] = dict(
+    exec_windows_utc=((7.0, 10.0), (12.0, 14.0)))
+
 # LUẬT THOÁT: TP cố định 1:3, breakeven ở +1R.
 #
 #   TP        = giá vào + 3R  (không phụ thuộc cấu trúc giá, nên R:R là HẰNG SỐ)
@@ -300,7 +318,7 @@ def _config(instrument: str, preset: str = "") -> SC.SweepConfig:
     if preset in ("MSS", "FREQ"):
         cfg = dataclasses.replace(cfg, **_WIDE_BANDS)
     if preset == "MSS":
-        cfg = dataclasses.replace(cfg, **_MSS_GATE, **_EXIT_RULE)
+        cfg = dataclasses.replace(cfg, **_MSS_GATE, **_EXIT_RULE, **_KILLZONE)
     return cfg
 
 
@@ -309,6 +327,13 @@ CONFIGS: Dict[str, SC.SweepConfig] = {s: _config(s) for s in INSTRUMENTS}
 # ═══════════════════════════════════════════════════════════ bằng chứng đo được
 # Hai hằng số này đi thẳng vào thẻ luật VÀ vào docstring đầu file, nên chúng là MỘT
 # nguồn. Số của preset đang bật.
+#
+# ⚠️ ĐO TRƯỚC KHI ÁP `_KILLZONE` (25/08/2026) — cửa sổ khớp lệnh lúc đo là dải liên
+# tục 07:00-20:00 UTC của `_WIDE_BANDS`, KHÔNG PHẢI hai killzone rời rạc đang chạy
+# bây giờ. Tần suất/kỳ vọng dưới đây sẽ đổi (nhiều khả năng THẤP hơn — killzone bỏ
+# đúng khoảng trũng thanh khoản giữa hai phiên). Chạy lại
+# `research/fx/asia_sweep_lab.py` trên cấu hình mới rồi thay số ở đây; đừng report
+# số cũ như thể nó mô tả đúng hành vi hiện tại.
 EXPECTANCY = (
     "R ròng/lệnh +0,0147 (t = +0,52) · R gộp +0,0567 · thắng 44,0% · R:R khai 1:3, "
     "thực hiện 1,32 · Profit Factor 1,040 · FORM -0,0023 -> OOS +0,0547 · "
