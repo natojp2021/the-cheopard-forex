@@ -857,6 +857,31 @@ def test_breaker_block_sends_one_grouped_email_not_one_per_symbol(monkeypatch, _
     assert sorted(grouped_calls[0]["blocked_symbols"]) == [f"SYM{i}" for i in range(5)]
 
 
+def test_duplicate_claim_skip_does_not_resend_entry_email(monkeypatch, _isolate_alerts):
+    """SỰ CỐ 25/08/2026 — khoá chống gửi lặp còn sống (khởi động lại giữa lúc claim
+    chưa nhả, hoặc chu kỳ sau lặp đúng tín hiệu) không được coi là một lần vào lệnh
+    MỚI. `_send_one()` trả `ok=True, reason="BỎ QUA — trùng khoá..."` cho trường hợp
+    này — đúng cho đường gửi lệnh (không được gửi lại thật), nhưng `_email()` trước
+    bản vá chỉ nhìn `ok` và `action` nên vẫn báo "🔔 vào lệnh" cho một lần KHÔNG hề
+    chạm broker, làm người vận hành tưởng có thêm một vị thế không có thật.
+    """
+    from src.python.shared.notifications import emails as EM_mod
+
+    entry_calls = []
+    monkeypatch.setattr(EM_mod, "entry", lambda **kw: entry_calls.append(kw) or True)
+
+    mt5 = _MT5()
+    r = OR.OrderRouter(mt5, dry_run=False)
+    plan = _Plan([_act("AUDCAD", "OPEN", "BUY", 1.0, tgt=1.0, stop=0.85)])
+
+    r.route(plan, bar_utc="2026-08-25T07", log_decisions=False)
+    r.route(plan, bar_utc="2026-08-25T07", log_decisions=False)  # cùng nến -> trùng khoá
+
+    assert len(mt5.requests) == 1, "chỉ được chạm broker đúng một lần"
+    assert len(entry_calls) == 1, (
+        "chỉ được báo 'vào lệnh' đúng một lần — lần BỎ QUA không phải một lệnh mới")
+
+
 # ═════════════════════════════════════════════════════ 10. quản lý lệnh sau khi mở
 def test_exit_reasons_are_a_closed_set():
     """Lý do đóng phải là tập ĐÓNG — bản ghi mọc biến thể chính tả là bản ghi vô dụng."""

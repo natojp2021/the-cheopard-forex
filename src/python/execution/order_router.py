@@ -902,6 +902,14 @@ class OrderRouter:
                                 fatal=_is_fatal(r.retcode)),
                         ttl_sec=3600.0)
                     continue
+                if (r.reason or "").startswith("BỎ QUA — trùng khoá"):
+                    # SỰ CỐ 25/08/2026 — `ok=True` ở đây nghĩa là "khoá đã có người
+                    # giữ, không ném lỗi", KHÔNG có nghĩa "vừa khớp lệnh". Không lọc
+                    # ra thì mỗi lần chu kỳ sau lặp lại đúng tín hiệu (hoặc tiến trình
+                    # khởi động lại giữa lúc claim còn sống) sẽ gửi thêm một thư "vào
+                    # lệnh" cho một lệnh KHÔNG hề chạm broker lần này — thư đầu tiên
+                    # lúc lệnh thật sự khớp đã báo đủ, lặp lại chỉ là báo động giả.
+                    continue
                 if r.action in ("OPEN", "INCREASE", "REVERSE_OPEN"):
                     EM.entry(strategy=_legs_of(r.symbol), symbol=r.symbol,
                              direction=r.side, lots=r.lots, price=float(r.price or 0.0),
