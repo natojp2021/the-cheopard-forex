@@ -122,7 +122,7 @@ py -3.11 -m venv .venv311
 # Chạy bot — CONSOLE-ONLY (bảng điều khiển Tk đã bị XOÁ)
 .\.venv311\Scripts\python.exe -m src.python.live_server
 #   hoặc nhấn đúp start_live_server.bat — cửa sổ console CHÍNH LÀ ứng dụng
-#   dừng êm từ ngoài: tạo tệp data/live/STOP_REQUESTED (đừng dùng taskkill:
+#   dừng êm từ ngoài: tạo tệp logs/live/STOP_REQUESTED (đừng dùng taskkill:
 #   kill giữa lúc gửi lệnh là chỗ sinh ra vị thế không có SL)
 
 # Điều khiển bot từ MỘT cửa sổ KHÁC
