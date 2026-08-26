@@ -187,11 +187,12 @@ class _Plan:
         return [a for a in self.actions if a.action != "HOLD"]
 
 
-def _act(symbol, action, side, lots, cur=0.0, tgt=0.0, stop=None, reason=""):
+def _act(symbol, action, side, lots, cur=0.0, tgt=0.0, stop=None, tp=None,
+         reason=""):
     from src.python.execution.order_plan import OrderAction
     return OrderAction(symbol=symbol, action=action, side=side, lots=lots,
                        current_lots=cur, target_lots=tgt, target_weight=0.1,
-                       stop_price=stop, reason=reason)
+                       stop_price=stop, take_profit=tp, reason=reason)
 
 
 
@@ -314,6 +315,22 @@ def test_open_order_carries_stop_in_same_request():
     r.route(_Plan([_act("AUDCAD", "OPEN", "BUY", 1.0, tgt=1.0, stop=0.855)]),
             log_decisions=False)
     assert mt5.requests[0]["sl"] == pytest.approx(0.855)
+
+
+def test_send_result_carries_take_profit_sent_to_broker():
+    """SỰ CỐ 27/08/2026 — `order_router` tính và gửi `tp` cho broker (dòng
+    `req["tp"] = ...` ở `_send_one`) nhưng `SendResult` không lưu lại giá trị
+    đó, nên `_email()` không có gì để đưa vào `EM.entry(tp_price=...)` và email
+    "Vào lệnh mới" luôn in "Không đặt TP cố định" dù lệnh CÓ TP thật trên
+    server. Ghim: TP gửi broker phải khớp TP đọc lại từ `out.sent[0]`.
+    """
+    mt5 = _MT5()
+    r = OR.OrderRouter(mt5, dry_run=False)
+    out = r.route(_Plan([_act("AUDCAD", "OPEN", "BUY", 1.0, tgt=1.0,
+                              stop=0.855, tp=0.92)]),
+                  log_decisions=False)
+    assert mt5.requests[0]["tp"] == pytest.approx(0.92)
+    assert out.sent[0].take_profit == pytest.approx(0.92)
 
 
 class _MT5Fused(_MT5):
@@ -880,6 +897,26 @@ def test_duplicate_claim_skip_does_not_resend_entry_email(monkeypatch, _isolate_
     assert len(mt5.requests) == 1, "chỉ được chạm broker đúng một lần"
     assert len(entry_calls) == 1, (
         "chỉ được báo 'vào lệnh' đúng một lần — lần BỎ QUA không phải một lệnh mới")
+
+
+def test_email_entry_call_receives_real_tp_price(monkeypatch, _isolate_alerts):
+    """SỰ CỐ 27/08/2026 — `_email()` gọi `EM.entry()` mà không truyền `tp_price`,
+    nên hàm dựng thư luôn hardcode "Không đặt TP cố định" dù lệnh CÓ TP thật
+    gửi kèm broker (xem `test_send_result_carries_take_profit_sent_to_broker`).
+    Ghim: `tp_price` truyền vào `EM.entry()` phải khớp TP đã gửi broker.
+    """
+    from src.python.shared.notifications import emails as EM_mod
+
+    entry_calls = []
+    monkeypatch.setattr(EM_mod, "entry", lambda **kw: entry_calls.append(kw) or True)
+
+    mt5 = _MT5()
+    r = OR.OrderRouter(mt5, dry_run=False)
+    plan = _Plan([_act("AUDCAD", "OPEN", "BUY", 1.0, tgt=1.0, stop=0.85, tp=0.92)])
+    r.route(plan, bar_utc="2026-08-27T07", log_decisions=False)
+
+    assert len(entry_calls) == 1
+    assert entry_calls[0]["tp_price"] == pytest.approx(0.92)
 
 
 # ═════════════════════════════════════════════════════ 10. quản lý lệnh sau khi mở

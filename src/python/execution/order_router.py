@@ -113,6 +113,7 @@ class SendResult:
     order_id: Optional[int] = None
     price: Optional[float] = None
     stop_price: Optional[float] = None
+    take_profit: Optional[float] = None
     idempotency_key: str = ""
     reason: str = ""
 
@@ -159,6 +160,8 @@ class SendResult:
             s += f" · notional ${self.notional_usd:,.0f}"
         if self.stop_price:
             s += f" · SL {self.stop_price:.5f}"
+        if self.take_profit:
+            s += f" · TP {self.take_profit:.5f}"
         if self.retcode is not None:
             s += f" · retcode {self.retcode}"
         if self.reason:
@@ -496,7 +499,7 @@ class OrderRouter:
             self._release(osm, claim, "dry-run")
             return SendResult(symbol=symbol, action=action, side=side, lots=lots,
                               ok=True, dry_run=True, stop_price=stop_price,
-                              idempotency_key=key,
+                              take_profit=take_profit, idempotency_key=key,
                               reason="dry-run — không gọi order_send")
 
         # Lệnh làm GIẢM phơi nhiễm phải đóng ĐÍCH DANH vị thế, xem `_close_symbol`.
@@ -551,7 +554,7 @@ class OrderRouter:
                 return SendResult(symbol=symbol, action=action, side=side,
                                   lots=lots, ok=False, price=price,
                                   spread_bps=spread_bps, stop_price=stop_price,
-                                  reason=short)
+                                  take_profit=take_profit, reason=short)
             res = mt5.order_send(req)
             retcode = int(getattr(res, "retcode", -1))
             ok = retcode == int(getattr(mt5, "TRADE_RETCODE_DONE", 10009))
@@ -578,7 +581,8 @@ class OrderRouter:
                 symbol=symbol, action=action, side=side, lots=lots, ok=ok,
                 dry_run=False, retcode=retcode,
                 order_id=int(getattr(res, "order", 0) or 0),
-                price=filled, stop_price=stop_price, idempotency_key=key,
+                price=filled, stop_price=stop_price, take_profit=take_profit,
+                idempotency_key=key,
                 bid=bid or None, ask=ask or None,
                 spread_price=spread_price, spread_bps=spread_bps,
                 slippage_price=(filled - price) if filled and price else None,
@@ -913,7 +917,7 @@ class OrderRouter:
                 if r.action in ("OPEN", "INCREASE", "REVERSE_OPEN"):
                     EM.entry(strategy=_legs_of(r.symbol), symbol=r.symbol,
                              direction=r.side, lots=r.lots, price=float(r.price or 0.0),
-                             stop_price=r.stop_price,
+                             stop_price=r.stop_price, tp_price=r.take_profit,
                              weight=(act.target_weight if act else None),
                              leverage=lev, equity=float(equity or 0.0),
                              spread=float(r.spread_price or 0.0),

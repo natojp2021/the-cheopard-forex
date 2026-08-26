@@ -655,6 +655,7 @@ def _stamps(gmt7: str, broker: str) -> str:
 
 def entry(*, strategy: str, symbol: str, direction: str, lots: float,
           price: float, stop_price: Optional[float] = None,
+          tp_price: Optional[float] = None,
           weight: Optional[float] = None, leverage: Optional[float] = None,
           equity: float = 0.0, spread: float = 0.0, timeframe: str = "",
           trade_id: str = "", magic=None, atr: Optional[float] = None,
@@ -662,17 +663,19 @@ def entry(*, strategy: str, symbol: str, direction: str, lots: float,
           reason: str = "") -> bool:
     """CLONE `send_strategy_entry_email` + `render_open_html` — đã MỞ vị thế thật.
 
-    BỐN KHỐI giữ nguyên đánh số, thứ tự và mọi hàng của bản cũ. Ba chỗ đổi, mỗi
-    chỗ là hệ quả của một khác biệt ĐÃ ĐO:
+    BỐN KHỐI giữ nguyên đánh số, thứ tự và mọi hàng của bản cũ.
 
-      · "Chốt lời (TP)" ghi "Không đặt TP cố định" — giữ HÀNG, đổi giá trị. Danh
-        mục không có TP theo giá; bỏ hẳn hàng thì người quen đọc email bản cũ sẽ
-        tưởng thiếu dữ liệu chứ không hiểu là hệ cố ý không có.
-      · "Tỷ lệ R:R" BỎ — R:R cần một TP, và bịa ra nó là bịa một con số.
-      · "Rủi ro ($)/(%)" thay bằng "Tỷ trọng mục tiêu" · "Đòn bẩy danh mục" ·
-        "Notional". Cỡ lệnh ở đây là vol-targeting
-        (`lot = equity × leverage × w / notional`), không suy từ khoảng cách tới
-        SL, nên "risk USD" của bản cũ không có định nghĩa tương ứng.
+    SỰ CỐ 27/08/2026: bản trước hardcode "Chốt lời (TP): Không đặt TP cố định"
+    và mô tả cỡ lệnh là thuần vol-targeting — đúng cho một danh mục KHÁC, sai
+    cho `AsiaSweepH1` đang chạy ở repo này. `order_plan`/`order_router` LUÔN
+    tính và gửi `tp` cùng lệnh (bất biến 3, exec 47,8% lệnh thoát bằng TP —
+    xem `order_router._send_one`), và cỡ lệnh thật đi qua
+    `risk_sizing.size_book()`: SL + % equity → lot, KHÔNG phải công thức
+    weight/leverage/notional thuần tuý. `tp_price` giờ lấy từ
+    `SendResult.take_profit` (trước đó bị tính rồi bỏ, không bao giờ tới được
+    email). "Tỷ trọng mục tiêu"/"Đòn bẩy danh mục" vẫn giữ — đó là số PHƠI
+    NHIỄM thật (`portfolio.target_weights()`, `ftmo_leverage_policy`), chỉ
+    riêng câu mô tả "cỡ lệnh tính từ chúng" là sai và đã bỏ.
     """
     is_buy = str(direction).upper().startswith("B")
     dir_txt = "BUY" if is_buy else "SELL"
@@ -717,7 +720,8 @@ def entry(*, strategy: str, symbol: str, direction: str, lots: float,
             f"(cách {dist:.5f})</span>", color="#c0392b")
     else:
         price_rows += _kv_row("Cầu chì (SL server)", sl_txt, color="#c0392b")
-    price_rows += _kv_row("Chốt lời (TP)", "Không đặt TP cố định")
+    tp_txt = f"{tp_price:.5f}" if tp_price else "Không có"
+    price_rows += _kv_row("Chốt lời (TP)", tp_txt)
     if atr is not None:
         price_rows += _kv_row("ATR lúc vào lệnh", f"{float(atr):.5f}")
     price_rows += _kv_row("Spread", f"{spread:.5f}" if spread else "—")
@@ -738,11 +742,13 @@ def entry(*, strategy: str, symbol: str, direction: str, lots: float,
 
     notice = _notice_card(
         "entry", "📊 Ghi chú về cách tính số liệu",
-        "Cỡ lệnh theo <b>vol-targeting</b>: "
-        "<code>lot = equity × đòn bẩy × tỷ trọng ÷ notional</code>, KHÔNG suy từ "
-        "khoảng cách tới cắt lỗ. Danh mục <b>không có SL theo giá</b> — đo lại "
-        "14/08 trên nhiều chân: mọi mức SL đều tệ hơn, 1×ATR mất 23% Sharpe và làm "
-        "MaxDD TỆ ĐI. Cầu chì ≥8×ATR chỉ là lớp phòng khi tiến trình chết.",
+        "Cỡ lệnh qua <code>risk_sizing.size_book()</code>: SL + % equity → lot "
+        "(rủi ro cố định mỗi lệnh, KHÔNG phải vol-targeting theo tỷ trọng/đòn "
+        "bẩy). \"Tỷ trọng mục tiêu\"/\"Đòn bẩy danh mục\" ở trên là số PHƠI "
+        "NHIỄM danh mục để báo cáo, không phải cơ sở tính lot. SL server ở "
+        "③ là SL CHIẾN LƯỢC (cực trị nến quét ± đệm) — cầu chì "
+        "<code>disaster_stop</code> ≥8×ATR chỉ là lớp phòng khi tiến trình chết, "
+        "không phải mức trên.",
         f"Email tự động từ {_bot()}.")
 
     html = _header(BORDER_ENTRY, "Real-time Trade Alert",
@@ -775,13 +781,14 @@ def entry(*, strategy: str, symbol: str, direction: str, lots: float,
         + (f"  - Equity: {equity:,.2f} $\n" if equity else "")
         + f"\n③ MỨC GIÁ & BẢO VỆ\n"
         f"  - Cầu chì (SL server): {sl_txt}\n"
-        f"  - Chốt lời (TP): Không đặt TP cố định\n"
+        f"  - Chốt lời (TP): {tp_txt}\n"
         + (f"  - ATR lúc vào lệnh: {float(atr):.5f}\n" if atr is not None else "")
         + f"  - Spread: {spread:.5f}\n\n"
         f"④ THIẾT LẬP\n"
         f"  - Lối thoát: time-stop hoặc tín hiệu ngược chiều\n"
         f"  - Lý do: {note}\n\n"
-        f"📊 Cỡ lệnh theo vol-targeting, KHÔNG suy từ khoảng cách tới cắt lỗ.\n"
+        f"📊 Cỡ lệnh qua risk_sizing.size_book() (SL + % equity → lot), "
+        f"KHÔNG phải vol-targeting.\n"
     )
     subject = f"🔔 [{_bot()}] {dir_txt} {strategy} — {symbol} (Lot {lots:.2f})"
     return _emit(subject, html, text)
@@ -898,7 +905,11 @@ def close(*, strategy: str, symbol: str, direction: str, lots: float,
             f"(cách {dist:.5f})</span>")
     else:
         price_rows += _kv_row("Cầu chì ban đầu (SL server)", "Không có")
-    price_rows += _kv_row("Chốt lời (TP)", "Không đặt TP cố định")
+    # SỰ CỐ 27/08/2026: dòng này từng khẳng định chắc "không có TP", sai cho
+    # AsiaSweepH1 (luôn có TP thật — xem `entry()`/`SendResult.take_profit`).
+    # `position_book.Position` chưa lưu TP lúc mở nên KHÔNG bịa số ở đây —
+    # trỏ về email vào lệnh thay vì khẳng định sai.
+    price_rows += _kv_row("Chốt lời (TP)", "Xem email vào lệnh — chưa lưu ở đây")
     price_rows += _kv_row("Giá đóng", f"{exit_price:.5f}", close_fg)
     price_block = _block("③ MỨC GIÁ & BẢO VỆ", price_rows)
 
@@ -982,7 +993,7 @@ def close(*, strategy: str, symbol: str, direction: str, lots: float,
         f"  - Giá vào lệnh: {entry_price:.5f}\n"
         + (f"  - Cầu chì ban đầu: {float(stop_price):.5f}\n" if stop_price
            else "  - Cầu chì ban đầu: Không có\n")
-        + f"  - Chốt lời (TP): Không đặt TP cố định\n"
+        + f"  - Chốt lời (TP): Xem email vào lệnh — chưa lưu ở đây\n"
         f"  - Giá đóng: {exit_price:.5f}\n"
         + (("\n④ PHÂN RÃ PnL\n"
             + (f"  - Lãi/lỗ thô (Gross): {float(gross_bps):+.1f} bps\n"
