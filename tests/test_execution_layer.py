@@ -1066,6 +1066,40 @@ def test_engine_finalises_positions_closed_on_broker(monkeypatch, _ctl, tmp_path
     assert any("ĐÓNG" in l and "CLOSED_ELSEWHERE" in l for l in lines), lines
 
 
+def test_close_email_receives_real_gross_bps_not_default_zero(monkeypatch, _ctl, tmp_path):
+    """SỰ CỐ 27/08/2026 — người vận hành nhận thư đóng lệnh "❌ LOSS" đi kèm
+    "PnL +0.0 bps": `record_close()` tính `gross_bps` đúng (âm, vì SELL đóng ở
+    giá cao hơn giá vào), nhưng `_send_close_email()` chỉ truyền 4/13 trường có
+    sẵn trên `rec` sang `EM.close()` — thiếu đúng `gross_bps`. `EM.close()` khi
+    thiếu cả `pnl_usd` lẫn `gross_bps` tự mặc định về 0.0 cho MỌI thứ (số hiển
+    thị VÀ nhãn WIN/LOSS), sinh ra thư tự mâu thuẫn. Ghim: `gross_bps` (và
+    `stop_price`/`trade_id`) truyền vào `EM.close()` phải khớp giá trị thật.
+    """
+    from src.python.execution.position_book import PositionBook
+    from src.python.shared.notifications import emails as EM_mod
+
+    close_calls = []
+    monkeypatch.setattr(EM_mod, "close", lambda **kw: close_calls.append(kw) or True)
+
+    e = _engine(monkeypatch)
+    book = PositionBook(tmp_path / "book.json")
+    # SELL EURUSD 1.16502 -> đóng 1.16547 (giá TĂNG) = LỖ thật cho lệnh SELL.
+    book.open("asia_sweep:EURUSD", symbol="EURUSD", side="SELL", lots=2.55,
+              entry_bar_utc="2026-08-26T21:01:43+00:00", entry_price=1.16502,
+              timeframe="H1", stop_price=1.16799)
+    e.state["positions_list"] = []
+    e.state["prices"] = {"EURUSD": 1.16547}
+    e._finalise_closed(book)
+
+    assert len(close_calls) == 1
+    kw = close_calls[0]
+    assert kw["gross_bps"] is not None and kw["gross_bps"] < 0, (
+        "SELL đóng ở giá CAO hơn giá vào phải ra gross_bps ÂM, không phải "
+        "mặc định 0.0/thiếu hẳn tham số")
+    assert kw["stop_price"] == pytest.approx(1.16799)
+    assert kw["trade_id"] == ""  # không có ticket thật trong test này -> rỗng, không "#0"
+
+
 def test_engine_keeps_positions_still_on_broker(monkeypatch, _ctl, tmp_path):
     """Vị thế CÒN trên broker thì không được đụng vào sổ."""
     from src.python.execution.position_book import PositionBook

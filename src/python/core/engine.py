@@ -35,7 +35,7 @@ from __future__ import annotations
 import threading
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -923,13 +923,42 @@ class TradingEngine:
         try:
             from src.python.shared.notifications import emails as EM
 
+            # SỰ CỐ 27/08/2026: `rec` (ClosedTrade từ record_close()) đã tính đủ
+            # gross_bps/mfe/mae/stop_price/equity_at_exit/ticket, nhưng trước bản
+            # vá chỉ 4 trường được truyền sang EM.close() — `gross_bps` không
+            # nằm trong số đó. `EM.close()` khi thiếu CẢ `pnl_usd` lẫn `gross_bps`
+            # tự rơi về mặc định 0.0 cho việc phân loại — cho ra thư "❌ LOSS"
+            # đi kèm "PnL +0.0 bps", tự mâu thuẫn ngay trong cùng một thư.
+            ticket = getattr(rec, "ticket", 0) or 0
+            entry_time_txt = "—"
+            entry_bar_utc = getattr(rec, "entry_bar_utc", "") or ""
+            if entry_bar_utc:
+                try:
+                    ts = datetime.fromisoformat(str(entry_bar_utc).replace("Z", "+00:00"))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    entry_time_txt = (ts.astimezone(timezone(timedelta(hours=7)))
+                                       .strftime("%Y-%m-%d %H:%M:%S"))
+                except Exception:
+                    entry_time_txt = str(entry_bar_utc)
+
             EM.close(strategy=getattr(rec, "leg", "?"),
                      symbol=pos.symbol, direction=pos.side, lots=float(pos.lots),
                      entry_price=float(pos.entry_price),
                      exit_price=float(getattr(rec, "exit_price", 0.0) or 0.0),
                      pnl_usd=getattr(rec, "pnl_usd", None),
+                     gross_bps=getattr(rec, "gross_bps", None),
+                     mfe=getattr(rec, "mfe_bps", None),
+                     mae=getattr(rec, "mae_bps", None),
                      bars_held=getattr(rec, "bars_held", None),
-                     reason=str(getattr(rec, "reason", "") or ""))
+                     reason=str(getattr(rec, "reason", "") or ""),
+                     stop_price=getattr(rec, "stop_price", None),
+                     equity=float(getattr(rec, "equity_at_exit", 0.0) or 0.0),
+                     trade_id=f"#{ticket}" if ticket else "",
+                     magic=getattr(rec, "magic", None) or None,
+                     timeframe=getattr(rec, "timeframe", "") or "",
+                     entry_time=entry_time_txt,
+                     exit_detail=str(getattr(rec, "note", "") or ""))
         except Exception as exc:                           # pragma: no cover
             _log_incident("email đóng lệnh", exc)
 
