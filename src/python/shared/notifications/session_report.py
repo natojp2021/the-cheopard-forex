@@ -31,10 +31,18 @@ from src.python.shared.notifications.emails import (
     _bot, _emit, _footer_line, _kv_row, _block, _card_style, _now_local, _version,
 )
 
-# Ngưỡng phân loại phiên. Không có "hoà": 0,0 bps là phiên KHÔNG LỖ, và gộp nó vào
-# nhóm lỗ sẽ làm màu thư nói sai về một ngày bình thường.
+# Ngưỡng phân loại phiên. Không có "hoà" giữa lãi/lỗ: 0,0 bps CÓ lệnh là phiên
+# KHÔNG LỖ, gộp nó vào nhóm lỗ sẽ làm màu thư nói sai về một ngày bình thường.
+#
+# SỰ CỐ 27/08/2026: ba trạng thái (lãi/lỗ/KHÔNG GIAO DỊCH) trước đó bị nén còn hai
+# (win/loss theo `net >= 0`) — 0 lệnh đóng thì `net_bps` mặc định 0.0, rơi vào
+# nhánh `is_win=True`, và thư ra tiêu đề "✅ PHIÊN LÃI" ngay phía trên dòng "Không
+# có lệnh nào đóng trong phiên" — tự mâu thuẫn ngay trong cùng một thư. "0 lệnh"
+# không phải một phiên LÃI, nó là một phiên KHÔNG GIAO DỊCH — trạng thái thứ ba,
+# không thuộc thang lãi/lỗ.
 BORDER_WIN = "#1e874b"
 BORDER_LOSS = "#c0392b"
+BORDER_NEUTRAL = "#94a3b8"
 
 
 def _load_closed(day: str) -> List[Dict[str, Any]]:
@@ -143,9 +151,14 @@ def send(day: Optional[str] = None, *, equity: float = 0.0,
     day = day or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     m = build_metrics(day)
     net = float(m["net_bps"])
+    no_trades = m["total_trades"] == 0
     is_win = net >= 0
-    border = BORDER_WIN if is_win else BORDER_LOSS
-    head = "✅ PHIÊN LÃI" if is_win else "❌ PHIÊN LỖ"
+    if no_trades:
+        border = BORDER_NEUTRAL
+        head = "⚪ PHIÊN KHÔNG GIAO DỊCH"
+    else:
+        border = BORDER_WIN if is_win else BORDER_LOSS
+        head = "✅ PHIÊN LÃI" if is_win else "❌ PHIÊN LỖ"
 
     metrics = _block("① Chỉ số phiên",
                      _kv_row("Tổng số lệnh đóng", m["total_trades"])
@@ -236,7 +249,11 @@ def send(day: Optional[str] = None, *, equity: float = 0.0,
         + (lines or "  (không có lệnh nào đóng trong phiên)\n")
         + f"\nThời điểm gửi: {_now_local()} (GMT +7)\n"
     )
-    subject = (f"{'✅ Phiên lãi' if is_win else '❌ Phiên lỗ'} {day} — "
+    if no_trades:
+        subject_head = "⚪ Phiên không giao dịch"
+    else:
+        subject_head = "✅ Phiên lãi" if is_win else "❌ Phiên lỗ"
+    subject = (f"{subject_head} {day} — "
                f"{m['total_trades']} lệnh, {net:+.1f} bps")
     return _emit(subject, html, text)
 
