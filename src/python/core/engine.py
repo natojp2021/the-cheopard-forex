@@ -502,7 +502,11 @@ class TradingEngine:
                 self._run_active_defence()
                 self._maybe_log_spread()
                 self._maybe_build_plan()
-                self._maybe_session_report()
+                # TẮT 28/08/2026 theo yêu cầu người vận hành — không gửi báo cáo
+                # tổng kết phiên (ngày/tuần) qua email nữa. `_maybe_session_report()`
+                # vẫn giữ nguyên, chỉ không còn được gọi từ vòng lặp; bật lại bằng
+                # cách un-comment dòng dưới.
+                # self._maybe_session_report()
             except Exception as exc:                       # pragma: no cover
                 self.log_error(f"vòng lặp: {exc}")
             self._stop.wait(REFRESH_SECONDS)
